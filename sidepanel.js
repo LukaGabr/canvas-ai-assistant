@@ -6,10 +6,12 @@ const settingsStatusEl = document.getElementById("settingsStatus");
 const changeKeyButton = document.getElementById("changeKeyButton");
 
 const courseSelect = document.getElementById("courseSelect");
+const messageListEl = document.getElementById("messageList");
+const emptyStateEl = document.getElementById("emptyState");
 const questionInput = document.getElementById("questionInput");
 const askButton = document.getElementById("askButton");
 const statusEl = document.getElementById("status");
-const answerEl = document.getElementById("answer");
+const clearButton = document.getElementById("clearButton");
 
 function showSettings() {
   apiKeyInput.value = "";
@@ -41,6 +43,30 @@ async function loadCourses() {
   }
 }
 
+function renderMessage(message) {
+  emptyStateEl.hidden = true;
+
+  const bubble = document.createElement("div");
+  bubble.className = `msg ${message.role === "user" ? "msg-user" : "msg-assistant"}`;
+  bubble.textContent = message.text;
+  messageListEl.appendChild(bubble);
+  messageListEl.scrollTop = messageListEl.scrollHeight;
+}
+
+async function loadChatHistory() {
+  const { chatHistory } = await chrome.storage.local.get(["chatHistory"]);
+
+  for (const message of chatHistory || []) {
+    renderMessage(message);
+  }
+}
+
+async function appendToHistory(messages) {
+  const { chatHistory } = await chrome.storage.local.get(["chatHistory"]);
+  const updated = [...(chatHistory || []), ...messages];
+  await chrome.storage.local.set({ chatHistory: updated });
+}
+
 async function init() {
   const { apiKey } = await chrome.storage.local.get(["apiKey"]);
 
@@ -51,6 +77,7 @@ async function init() {
 
   showMain();
   loadCourses();
+  loadChatHistory();
 }
 
 saveKeyButton.addEventListener("click", async () => {
@@ -64,10 +91,20 @@ saveKeyButton.addEventListener("click", async () => {
   await chrome.storage.local.set({ apiKey: key });
   showMain();
   loadCourses();
+  loadChatHistory();
 });
 
 changeKeyButton.addEventListener("click", () => {
   showSettings();
+});
+
+clearButton.addEventListener("click", async () => {
+  if (!confirm("Clear the entire conversation history? This can't be undone.")) return;
+
+  await chrome.storage.local.remove("chatHistory");
+  messageListEl.innerHTML = "";
+  messageListEl.appendChild(emptyStateEl);
+  emptyStateEl.hidden = false;
 });
 
 askButton.addEventListener("click", () => {
@@ -78,23 +115,30 @@ askButton.addEventListener("click", () => {
 
   askButton.disabled = true;
   statusEl.textContent = "Thinking...";
-  answerEl.textContent = "";
 
-  chrome.runtime.sendMessage({ type: "ASK_QUESTION", courseId, question }, (response) => {
+  chrome.runtime.sendMessage({ type: "ASK_QUESTION", courseId, question }, async (response) => {
     askButton.disabled = false;
-    statusEl.textContent = "";
 
     if (chrome.runtime.lastError) {
-      answerEl.textContent = `Error: ${chrome.runtime.lastError.message}`;
+      statusEl.textContent = `Error: ${chrome.runtime.lastError.message}`;
       return;
     }
 
     if (!response || !response.success) {
-      answerEl.textContent = `Error: ${response ? response.error : "No response from background script."}`;
+      statusEl.textContent = `Error: ${response ? response.error : "No response from background script."}`;
       return;
     }
 
-    answerEl.textContent = response.answer;
+    statusEl.textContent = "";
+    questionInput.value = "";
+
+    const userMessage = { role: "user", text: question, courseId, timestamp: Date.now() };
+    const assistantMessage = { role: "assistant", text: response.answer, timestamp: Date.now() };
+
+    renderMessage(userMessage);
+    renderMessage(assistantMessage);
+
+    await appendToHistory([userMessage, assistantMessage]);
   });
 });
 

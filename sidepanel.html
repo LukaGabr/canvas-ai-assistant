@@ -3,8 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <style>
+      html,
       body {
-        width: 340px;
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
         padding: 16px;
         font-family: sans-serif;
       }
@@ -53,30 +60,66 @@
         color: #c00;
         margin-top: 8px;
       }
+      #mainSection {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      #messageList {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 10px 0;
+        padding: 4px;
+      }
+      #emptyState {
+        font-size: 12px;
+        color: #888;
+        text-align: center;
+        margin-top: 20px;
+      }
+      .msg {
+        max-width: 85%;
+        padding: 8px 10px;
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .msg-user {
+        align-self: flex-end;
+        background: #daf0ff;
+        color: #003a5c;
+      }
+      .msg-assistant {
+        align-self: flex-start;
+        background: #f0f0f0;
+        color: #222;
+      }
       #status {
         font-size: 12px;
         color: #555;
-        margin-top: 8px;
-      }
-      #answer {
-        white-space: pre-wrap;
-        font-size: 13px;
-        margin-top: 10px;
-        line-height: 1.4;
+        min-height: 16px;
       }
       .linkButton {
         width: auto;
-        display: block;
+        display: inline-block;
         background: none;
         border: none;
         padding: 0;
         margin-top: 12px;
+        margin-right: 12px;
         font-size: 12px;
         color: #06c;
         text-decoration: underline;
       }
       [hidden] {
-        display: none;
+        display: none !important;
       }
     </style>
   </head>
@@ -98,17 +141,23 @@
       <label for="courseSelect">Course</label>
       <select id="courseSelect"></select>
 
+      <div id="messageList">
+        <div id="emptyState">Ask a question about one of your courses to get started.</div>
+      </div>
+
+      <div id="status"></div>
+
       <label for="questionInput">Question</label>
       <textarea id="questionInput" placeholder="e.g. When is the next assignment due?"></textarea>
 
       <button id="askButton">Ask</button>
 
-      <div id="status"></div>
-      <div id="answer"></div>
-
-      <button id="changeKeyButton" class="linkButton">Change API key</button>
+      <div>
+        <button id="clearButton" class="linkButton">Clear conversation</button>
+        <button id="changeKeyButton" class="linkButton">Change API key</button>
+      </div>
     </div>
 
-    <script src="popup.js"></script>
+    <script src="sidepanel.js"></script>
   </body>
 </html>

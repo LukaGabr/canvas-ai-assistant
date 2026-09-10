@@ -3,16 +3,18 @@
   "name": "Canvas AI Assistant",
   "version": "0.1.0",
   "description": "Ask your Canvas courses questions in plain English.",
-  "action": {
-    "default_popup": "popup.html"
-  },
+  "action": {},
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "permissions": [
     "storage",
-    "offscreen"
+    "offscreen",
+    "sidePanel"
   ],
   "host_permissions": [
     "*://*.instructure.com/*",

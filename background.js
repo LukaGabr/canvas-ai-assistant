@@ -1,5 +1,9 @@
 console.log("Canvas AI Assistant background worker started");
 
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error(error));
+
 const BASE_URL = "https://rutgers.instructure.com/api/v1";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 

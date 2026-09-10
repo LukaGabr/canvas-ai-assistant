@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Canvas AI Assistant",
+  "version": "0.1.0",
+  "description": "Ask your Canvas courses questions in plain English.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.instructure.com/*"
+  ]
+}

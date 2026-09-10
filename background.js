@@ -62,5 +62,37 @@ async function getCourseIndex(forceRefresh = false) {
   return indexAllCourses();
 }
 
+let offscreenReady = null;
+
+async function ensureOffscreenDocument() {
+  if (offscreenReady) return offscreenReady;
+
+  offscreenReady = chrome.offscreen.createDocument({
+    url: "offscreen.html",
+    reasons: ["WORKERS"],
+    justification: "Extract text from PDF files using pdf.js"
+  });
+
+  return offscreenReady;
+}
+
+async function extractPdfText(fileUrl) {
+  await ensureOffscreenDocument();
+
+  const response = await chrome.runtime.sendMessage({
+    type: "EXTRACT_PDF_TEXT",
+    fileUrl: fileUrl
+  });
+
+  if (!response.success) {
+    throw new Error(response.error);
+  }
+
+  return response.text;
+}
+
 // Run once when the background worker starts
 getCourseIndex();
+
+extractPdfText("https://rutgers.instructure.com/files/60310828/download?download_frd=1")
+  .then(text => console.log("Extracted text:", text));

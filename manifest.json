@@ -7,12 +7,20 @@
     "default_popup": "popup.html"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "permissions": [
-    "storage"
+    "storage",
+    "offscreen"
   ],
   "host_permissions": [
     "*://*.instructure.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["libs/pdfjs/pdf.worker.mjs"],
+      "matches": ["<all_urls>"]
+    }
   ]
 }

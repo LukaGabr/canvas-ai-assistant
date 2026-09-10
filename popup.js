@@ -1,8 +1,27 @@
+const settingsSection = document.getElementById("settingsSection");
+const mainSection = document.getElementById("mainSection");
+const apiKeyInput = document.getElementById("apiKeyInput");
+const saveKeyButton = document.getElementById("saveKeyButton");
+const settingsStatusEl = document.getElementById("settingsStatus");
+const changeKeyButton = document.getElementById("changeKeyButton");
+
 const courseSelect = document.getElementById("courseSelect");
 const questionInput = document.getElementById("questionInput");
 const askButton = document.getElementById("askButton");
 const statusEl = document.getElementById("status");
 const answerEl = document.getElementById("answer");
+
+function showSettings() {
+  apiKeyInput.value = "";
+  settingsStatusEl.textContent = "";
+  settingsSection.hidden = false;
+  mainSection.hidden = true;
+}
+
+function showMain() {
+  settingsSection.hidden = true;
+  mainSection.hidden = false;
+}
 
 async function loadCourses() {
   const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
@@ -21,6 +40,35 @@ async function loadCourses() {
     courseSelect.appendChild(option);
   }
 }
+
+async function init() {
+  const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+
+  if (!apiKey) {
+    showSettings();
+    return;
+  }
+
+  showMain();
+  loadCourses();
+}
+
+saveKeyButton.addEventListener("click", async () => {
+  const key = apiKeyInput.value.trim();
+
+  if (!key || !key.startsWith("sk-ant-")) {
+    settingsStatusEl.textContent = 'Please enter a valid Claude API key (it should start with "sk-ant-").';
+    return;
+  }
+
+  await chrome.storage.local.set({ apiKey: key });
+  showMain();
+  loadCourses();
+});
+
+changeKeyButton.addEventListener("click", () => {
+  showSettings();
+});
 
 askButton.addEventListener("click", () => {
   const courseId = courseSelect.value;
@@ -50,4 +98,4 @@ askButton.addEventListener("click", () => {
   });
 });
 
-loadCourses();
+init();

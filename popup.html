@@ -18,6 +18,7 @@
         color: #555;
         margin-bottom: 4px;
       }
+      input,
       select,
       textarea {
         width: 100%;
@@ -41,6 +42,17 @@
         cursor: default;
         opacity: 0.6;
       }
+      #apiKeyHint {
+        font-size: 11px;
+        color: #777;
+        line-height: 1.3;
+        margin: -4px 0 10px 0;
+      }
+      #settingsStatus {
+        font-size: 12px;
+        color: #c00;
+        margin-top: 8px;
+      }
       #status {
         font-size: 12px;
         color: #555;
@@ -52,21 +64,50 @@
         margin-top: 10px;
         line-height: 1.4;
       }
+      .linkButton {
+        width: auto;
+        display: block;
+        background: none;
+        border: none;
+        padding: 0;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #06c;
+        text-decoration: underline;
+      }
+      [hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <h1>Canvas AI Assistant</h1>
 
-    <label for="courseSelect">Course</label>
-    <select id="courseSelect"></select>
+    <div id="settingsSection">
+      <label for="apiKeyInput">Claude API Key</label>
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+      <p id="apiKeyHint">
+        Your key is stored only on this device and sent only to Anthropic's API. Treat it like a
+        password — anyone with access to your browser could technically access it.
+      </p>
+      <button id="saveKeyButton">Save</button>
+      <div id="settingsStatus"></div>
+    </div>
 
-    <label for="questionInput">Question</label>
-    <textarea id="questionInput" placeholder="e.g. When is the next assignment due?"></textarea>
+    <div id="mainSection">
+      <label for="courseSelect">Course</label>
+      <select id="courseSelect"></select>
 
-    <button id="askButton">Ask</button>
+      <label for="questionInput">Question</label>
+      <textarea id="questionInput" placeholder="e.g. When is the next assignment due?"></textarea>
 
-    <div id="status"></div>
-    <div id="answer"></div>
+      <button id="askButton">Ask</button>
+
+      <div id="status"></div>
+      <div id="answer"></div>
+
+      <button id="changeKeyButton" class="linkButton">Change API key</button>
+    </div>
 
     <script src="popup.js"></script>
   </body>

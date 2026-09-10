@@ -1,5 +1,3 @@
-import { CLAUDE_API_KEY } from "./config.js";
-
 console.log("Canvas AI Assistant background worker started");
 
 const BASE_URL = "https://rutgers.instructure.com/api/v1";
@@ -156,6 +154,12 @@ function buildCourseContext(course) {
 }
 
 async function askClaude(courseId, question) {
+  const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+
+  if (!apiKey) {
+    throw new Error("No API key set. Please add your Claude API key in the extension settings.");
+  }
+
   const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
   const course = (courseIndex || []).find(c => String(c.id) === String(courseId));
 
@@ -170,7 +174,7 @@ async function askClaude(courseId, question) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": CLAUDE_API_KEY,
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "anthropic-beta": "server-side-fallback-2026-07-01",
       "anthropic-dangerous-direct-browser-access": "true"

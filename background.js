@@ -27,17 +27,37 @@ async function indexAllCourses() {
       `${BASE_URL}/courses/${course.id}/files?per_page=100`
     );
 
+    const filesArray = Array.isArray(files) ? files : [];
+
+    // NEW: extract text for each PDF file
+    for (const file of filesArray) {
+      if (file["content-type"] !== "application/pdf") {
+        console.log(`Skipping non-PDF file: ${file.display_name}`);
+        file.extractedText = null;
+        continue;
+      }
+
+      console.log(`Extracting text from: ${file.display_name}`);
+      try {
+        file.extractedText = await extractPdfText(file.url);
+      } catch (err) {
+        console.warn(`Failed to extract ${file.display_name}:`, err.message);
+        file.extractedText = null;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
     fullData.push({
       id: course.id,
       name: course.name,
       assignments: assignments,
-      files: files
+      files: filesArray
     });
 
     await new Promise(resolve => setTimeout(resolve, 250));
   }
 
-  // Save to persistent storage, with a timestamp
   await chrome.storage.local.set({
     courseIndex: fullData,
     lastSynced: Date.now()
@@ -93,6 +113,3 @@ async function extractPdfText(fileUrl) {
 
 // Run once when the background worker starts
 getCourseIndex();
-
-extractPdfText("https://rutgers.instructure.com/files/60310828/download?download_frd=1")
-  .then(text => console.log("Extracted text:", text));

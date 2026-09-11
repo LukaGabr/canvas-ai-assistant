@@ -14,7 +14,11 @@ const statusEl = document.getElementById("status");
 const clearButton = document.getElementById("clearButton");
 
 function cleanCanvasUrl(value) {
-  return value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
+}
+
+function isPlausibleDomain(value) {
+  return /^[^\s/]+\.[^\s/]+$/.test(value);
 }
 
 async function showSettings() {
@@ -32,7 +36,13 @@ function showMain() {
 }
 
 async function checkIndexReady() {
-  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
+  const { courseIndex, indexError } = await chrome.storage.local.get(["courseIndex", "indexError"]);
+
+  if (indexError) {
+    statusEl.textContent = "Couldn't reach Canvas at that URL. Double check your school's Canvas domain in settings.";
+    askButton.disabled = true;
+    return;
+  }
 
   if (!courseIndex || courseIndex.length === 0) {
     statusEl.textContent = "No indexed courses yet. Visit Canvas and reopen the extension.";
@@ -90,14 +100,26 @@ saveSettingsButton.addEventListener("click", async () => {
     return;
   }
 
+  if (!isPlausibleDomain(canvasUrl)) {
+    settingsStatusEl.textContent = `"${canvasUrl}" doesn't look like a valid domain — enter just the domain (e.g. rutgers.instructure.com), not a full page URL.`;
+    return;
+  }
+
   if (!key || !key.startsWith("sk-ant-")) {
     settingsStatusEl.textContent = 'Please enter a valid Claude API key (it should start with "sk-ant-").';
     return;
   }
 
   await chrome.storage.local.set({ canvasUrl, apiKey: key });
+  await chrome.storage.local.remove("indexError");
   showMain();
-  checkIndexReady();
+  askButton.disabled = true;
+  statusEl.textContent = "Checking your Canvas URL...";
+
+  chrome.runtime.sendMessage({ type: "REFRESH_COURSE_INDEX" }, () => {
+    checkIndexReady();
+  });
+
   loadChatHistory();
 });
 

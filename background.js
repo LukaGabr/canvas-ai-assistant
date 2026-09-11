@@ -53,7 +53,16 @@ async function fetchJSON(url) {
     credentials: "include",
     headers: { "Accept": "application/json" }
   });
-  return response.json();
+
+  if (!response.ok) {
+    throw new Error(`Canvas request failed (${response.status}): ${url}`);
+  }
+
+  try {
+    return await response.json();
+  } catch (err) {
+    throw new Error(`Canvas didn't return valid data for: ${url}`);
+  }
 }
 
 async function getBaseUrl() {
@@ -76,18 +85,34 @@ async function indexAllCourses() {
   for (const course of courses) {
     console.log(`Fetching data for: ${course.name}`);
 
-    const assignments = await fetchJSON(
-      `${BASE_URL}/courses/${course.id}/assignments?per_page=100`
-    );
-    const files = await fetchJSON(
-      `${BASE_URL}/courses/${course.id}/files?per_page=100`
-    );
-    const courseDetails = await fetchJSON(
-      `${BASE_URL}/courses/${course.id}?include[]=syllabus_body`
-    );
+    let assignments = [];
+    try {
+      assignments = await fetchJSON(
+        `${BASE_URL}/courses/${course.id}/assignments?per_page=100`
+      );
+    } catch (err) {
+      console.warn(`Failed to fetch assignments for ${course.name}:`, err.message);
+    }
 
-    const filesArray = Array.isArray(files) ? files : [];
-    const syllabusText = stripHtml(courseDetails.syllabus_body);
+    let filesArray = [];
+    try {
+      const files = await fetchJSON(
+        `${BASE_URL}/courses/${course.id}/files?per_page=100`
+      );
+      filesArray = Array.isArray(files) ? files : [];
+    } catch (err) {
+      console.warn(`Failed to fetch files for ${course.name}:`, err.message);
+    }
+
+    let syllabusText = "";
+    try {
+      const courseDetails = await fetchJSON(
+        `${BASE_URL}/courses/${course.id}?include[]=syllabus_body`
+      );
+      syllabusText = stripHtml(courseDetails.syllabus_body);
+    } catch (err) {
+      console.warn(`Failed to fetch details for ${course.name}:`, err.message);
+    }
 
     // NEW: extract text for each PDF file
     for (const file of filesArray) {
@@ -143,18 +168,14 @@ async function getCourseIndex(forceRefresh = false) {
   return indexAllCourses();
 }
 
-let offscreenReady = null;
-
 async function ensureOffscreenDocument() {
-  if (offscreenReady) return offscreenReady;
+  if (await chrome.offscreen.hasDocument()) return;
 
-  offscreenReady = chrome.offscreen.createDocument({
+  await chrome.offscreen.createDocument({
     url: "offscreen.html",
     reasons: ["WORKERS"],
     justification: "Extract text from PDF files using pdf.js"
   });
-
-  return offscreenReady;
 }
 
 async function extractPdfText(fileUrl) {
@@ -329,14 +350,34 @@ async function askClaude(question) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "ASK_QUESTION") return;
+  if (message.type === "REFRESH_COURSE_INDEX") {
+    getCourseIndex(true)
+      .then(() => {
+        chrome.storage.local.remove("indexError");
+        sendResponse({ success: true });
+      })
+      .catch(err => {
+        console.warn("Course index refresh failed:", err.message);
+        chrome.storage.local.set({ indexError: err.message });
+        sendResponse({ success: false, error: err.message });
+      });
 
-  askClaude(message.question)
-    .then(answer => sendResponse({ success: true, answer }))
-    .catch(err => sendResponse({ success: false, error: err.message }));
+    return true; // keep the message channel open for the async response
+  }
 
-  return true; // keep the message channel open for the async response
+  if (message.type === "ASK_QUESTION") {
+    askClaude(message.question)
+      .then(answer => sendResponse({ success: true, answer }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+
+    return true; // keep the message channel open for the async response
+  }
 });
 
 // Run once when the background worker starts
-getCourseIndex().catch(err => console.warn("Skipping initial course index:", err.message));
+getCourseIndex()
+  .then(() => chrome.storage.local.remove("indexError"))
+  .catch(err => {
+    console.warn("Skipping initial course index:", err.message);
+    chrome.storage.local.set({ indexError: err.message });
+  });

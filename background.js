@@ -8,15 +8,46 @@ const BASE_URL = "https://rutgers.instructure.com/api/v1";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL = "claude-opus-5";
+const CLAUDE_MODEL = "claude-sonnet-5";
 
-const SYSTEM_PROMPT = `You are a helpful assistant for a Rutgers student. You answer questions about ONE of their Canvas courses using ONLY the course data (syllabus, assignments, and file text) provided in the user's message.
+const SYSTEM_PROMPT = `You are a helpful assistant for a Rutgers student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, and assignment names/due dates/points), plus the results of any tools you call.
+
+You have two tools available:
+- get_file_content: fetches the full extracted text of one specific file, when the summary's file name list alone isn't enough to answer the question.
+- get_assignment_details: fetches one specific assignment's full description, when its name/due date/points alone aren't enough to answer the question.
 
 Rules:
-- Only use information present in the provided course data. Never use outside knowledge about this course, Rutgers, or typical academic policies to fill gaps.
-- If the answer — a due date, grade, policy, or file content — is not present in the provided data, say plainly that it is not available in the indexed course data. Do not guess or estimate.
+- Only use information present in the provided summary or in tool results. Never use outside knowledge about a course, Rutgers, or typical academic policies to fill gaps.
+- If the answer — a due date, grade, policy, or file/assignment content — is not available even after calling a relevant tool, say plainly that it is not available in the indexed course data. Do not guess or estimate.
 - When you do answer, mention whether it came from the syllabus, an assignment, or a specific file so the student can double check it.
 - Be concise and answer the question directly.`;
+
+const TOOLS = [
+  {
+    name: "get_file_content",
+    description: "Get the full extracted text of one specific file from one specific course. Call this only when the course summary (which lists file names but not their content) isn't enough to answer the question — e.g. the question is likely answered by something inside a specific document (a rubric, a reading, a project spec) rather than by a due date, grade weight, or policy already visible in the syllabus.",
+    input_schema: {
+      type: "object",
+      properties: {
+        course_id: { type: "string", description: "The course's id, from the course summary." },
+        file_name: { type: "string", description: "The exact file name (as it appears in the course summary's file list)." }
+      },
+      required: ["course_id", "file_name"]
+    }
+  },
+  {
+    name: "get_assignment_details",
+    description: "Get the full description of one specific assignment from one specific course. Call this only when the assignment's name, due date, and points alone (already in the course summary) aren't enough to answer the question — e.g. the question asks what an assignment requires, how it's graded, or other details that live in its description.",
+    input_schema: {
+      type: "object",
+      properties: {
+        course_id: { type: "string", description: "The course's id, from the course summary." },
+        assignment_name: { type: "string", description: "The exact assignment name (as it appears in the course summary's assignments list)." }
+      },
+      required: ["course_id", "assignment_name"]
+    }
+  }
+];
 
 async function fetchJSON(url) {
   const response = await fetch(url, {
@@ -136,44 +167,58 @@ function stripHtml(html) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function buildCourseContext(course) {
-  const assignments = (course.assignments || []).map(a => ({
-    name: a.name,
-    due_at: a.due_at,
-    points_possible: a.points_possible,
-    description: stripHtml(a.description)
-  }));
-
-  const files = (course.files || []).map(f => ({
-    name: f.display_name,
-    extractedText: f.extractedText || null
-  }));
-
-  return {
+function buildAllCoursesSummary(courseIndex) {
+  return (courseIndex || []).map(course => ({
+    course_id: course.id,
     course_name: course.name,
     syllabus: course.syllabusText || null,
-    assignments,
-    files
-  };
+    assignments: (course.assignments || []).map(a => ({
+      name: a.name,
+      due_at: a.due_at,
+      points_possible: a.points_possible
+    })),
+    files: (course.files || []).map(f => f.display_name)
+  }));
 }
 
-async function askClaude(courseId, question) {
-  const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+function findCourse(courseIndex, courseId) {
+  return (courseIndex || []).find(c => String(c.id) === String(courseId));
+}
 
-  if (!apiKey) {
-    throw new Error("No API key set. Please add your Claude API key in the extension settings.");
+function getFileContent(courseIndex, courseId, fileName) {
+  const course = findCourse(courseIndex, courseId);
+  if (!course) return `No course found with id "${courseId}".`;
+
+  const file = (course.files || []).find(f => f.display_name === fileName);
+  if (!file) return `No file named "${fileName}" found in ${course.name}.`;
+
+  return file.extractedText || `"${fileName}" has no extracted text available (it may not be a PDF, or extraction failed).`;
+}
+
+function getAssignmentDetails(courseIndex, courseId, assignmentName) {
+  const course = findCourse(courseIndex, courseId);
+  if (!course) return `No course found with id "${courseId}".`;
+
+  const assignment = (course.assignments || []).find(a => a.name === assignmentName);
+  if (!assignment) return `No assignment named "${assignmentName}" found in ${course.name}.`;
+
+  const description = stripHtml(assignment.description);
+  return description || `"${assignmentName}" has no description text.`;
+}
+
+function resolveToolUse(courseIndex, block) {
+  if (block.name === "get_file_content") {
+    return getFileContent(courseIndex, block.input.course_id, block.input.file_name);
   }
 
-  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
-  const course = (courseIndex || []).find(c => String(c.id) === String(courseId));
-
-  if (!course) {
-    throw new Error("Couldn't find that course in the indexed data. Try refreshing the extension.");
+  if (block.name === "get_assignment_details") {
+    return getAssignmentDetails(courseIndex, block.input.course_id, block.input.assignment_name);
   }
 
-  const courseContext = buildCourseContext(course);
-  const userMessage = `Today's date is ${new Date().toISOString()}.\n\nCourse data (JSON):\n${JSON.stringify(courseContext)}\n\nQuestion: ${question}`;
+  return `Unknown tool "${block.name}".`;
+}
 
+async function callClaude(apiKey, messages) {
   const response = await fetch(CLAUDE_API_URL, {
     method: "POST",
     headers: {
@@ -187,9 +232,10 @@ async function askClaude(courseId, question) {
       model: CLAUDE_MODEL,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
+      tools: TOOLS,
       output_config: { effort: "low" },
       fallbacks: "default",
-      messages: [{ role: "user", content: userMessage }]
+      messages
     })
   });
 
@@ -199,18 +245,64 @@ async function askClaude(courseId, question) {
     throw new Error(data?.error?.message || `Claude API error (${response.status})`);
   }
 
-  if (data.stop_reason === "refusal") {
-    throw new Error("Claude declined to answer that question.");
+  return data;
+}
+
+const MAX_TOOL_ROUNDS = 5;
+
+async function askClaude(question) {
+  const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+
+  if (!apiKey) {
+    throw new Error("No API key set. Please add your Claude API key in the extension settings.");
   }
 
-  const textBlock = (data.content || []).find(block => block.type === "text");
-  return textBlock ? textBlock.text : "";
+  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
+
+  if (!courseIndex || courseIndex.length === 0) {
+    throw new Error("No indexed courses yet. Visit Canvas and reopen the extension.");
+  }
+
+  const summary = buildAllCoursesSummary(courseIndex);
+  const messages = [
+    {
+      role: "user",
+      content: `Today's date is ${new Date().toISOString()}.\n\nCourse summary, across all active courses (JSON):\n${JSON.stringify(summary)}\n\nQuestion: ${question}`
+    }
+  ];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const data = await callClaude(apiKey, messages);
+
+    if (data.stop_reason === "refusal") {
+      throw new Error("Claude declined to answer that question.");
+    }
+
+    const toolUseBlocks = (data.content || []).filter(block => block.type === "tool_use");
+
+    if (toolUseBlocks.length === 0) {
+      const textBlock = (data.content || []).find(block => block.type === "text");
+      return textBlock ? textBlock.text : "";
+    }
+
+    messages.push({ role: "assistant", content: data.content });
+
+    const toolResults = toolUseBlocks.map(block => ({
+      type: "tool_result",
+      tool_use_id: block.id,
+      content: resolveToolUse(courseIndex, block)
+    }));
+
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  throw new Error("Claude needed too many tool calls to answer this question. Try asking something more specific.");
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type !== "ASK_QUESTION") return;
 
-  askClaude(message.courseId, message.question)
+  askClaude(message.question)
     .then(answer => sendResponse({ success: true, answer }))
     .catch(err => sendResponse({ success: false, error: err.message }));
 

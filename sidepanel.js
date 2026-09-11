@@ -5,7 +5,6 @@ const saveKeyButton = document.getElementById("saveKeyButton");
 const settingsStatusEl = document.getElementById("settingsStatus");
 const changeKeyButton = document.getElementById("changeKeyButton");
 
-const courseSelect = document.getElementById("courseSelect");
 const messageListEl = document.getElementById("messageList");
 const emptyStateEl = document.getElementById("emptyState");
 const questionInput = document.getElementById("questionInput");
@@ -25,7 +24,7 @@ function showMain() {
   mainSection.hidden = false;
 }
 
-async function loadCourses() {
+async function checkIndexReady() {
   const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
 
   if (!courseIndex || courseIndex.length === 0) {
@@ -34,13 +33,8 @@ async function loadCourses() {
     return;
   }
 
-  courseSelect.innerHTML = "";
-  for (const course of courseIndex) {
-    const option = document.createElement("option");
-    option.value = course.id;
-    option.textContent = course.name;
-    courseSelect.appendChild(option);
-  }
+  askButton.disabled = false;
+  statusEl.textContent = "";
 }
 
 function renderMessage(message) {
@@ -76,7 +70,7 @@ async function init() {
   }
 
   showMain();
-  loadCourses();
+  checkIndexReady();
   loadChatHistory();
 }
 
@@ -90,7 +84,7 @@ saveKeyButton.addEventListener("click", async () => {
 
   await chrome.storage.local.set({ apiKey: key });
   showMain();
-  loadCourses();
+  checkIndexReady();
   loadChatHistory();
 });
 
@@ -108,7 +102,6 @@ clearButton.addEventListener("click", async () => {
 });
 
 askButton.addEventListener("click", () => {
-  const courseId = courseSelect.value;
   const question = questionInput.value.trim();
 
   if (!question) return;
@@ -116,7 +109,7 @@ askButton.addEventListener("click", () => {
   askButton.disabled = true;
   statusEl.textContent = "Thinking...";
 
-  chrome.runtime.sendMessage({ type: "ASK_QUESTION", courseId, question }, async (response) => {
+  chrome.runtime.sendMessage({ type: "ASK_QUESTION", question }, async (response) => {
     askButton.disabled = false;
 
     if (chrome.runtime.lastError) {
@@ -132,7 +125,7 @@ askButton.addEventListener("click", () => {
     statusEl.textContent = "";
     questionInput.value = "";
 
-    const userMessage = { role: "user", text: question, courseId, timestamp: Date.now() };
+    const userMessage = { role: "user", text: question, timestamp: Date.now() };
     const assistantMessage = { role: "assistant", text: response.answer, timestamp: Date.now() };
 
     renderMessage(userMessage);

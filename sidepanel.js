@@ -1,9 +1,10 @@
 const settingsSection = document.getElementById("settingsSection");
 const mainSection = document.getElementById("mainSection");
+const canvasUrlInput = document.getElementById("canvasUrlInput");
 const apiKeyInput = document.getElementById("apiKeyInput");
-const saveKeyButton = document.getElementById("saveKeyButton");
+const saveSettingsButton = document.getElementById("saveSettingsButton");
 const settingsStatusEl = document.getElementById("settingsStatus");
-const changeKeyButton = document.getElementById("changeKeyButton");
+const changeSettingsButton = document.getElementById("changeSettingsButton");
 
 const messageListEl = document.getElementById("messageList");
 const emptyStateEl = document.getElementById("emptyState");
@@ -12,7 +13,13 @@ const askButton = document.getElementById("askButton");
 const statusEl = document.getElementById("status");
 const clearButton = document.getElementById("clearButton");
 
-function showSettings() {
+function cleanCanvasUrl(value) {
+  return value.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}
+
+async function showSettings() {
+  const { canvasUrl } = await chrome.storage.local.get(["canvasUrl"]);
+  canvasUrlInput.value = canvasUrl || "";
   apiKeyInput.value = "";
   settingsStatusEl.textContent = "";
   settingsSection.hidden = false;
@@ -62,9 +69,9 @@ async function appendToHistory(messages) {
 }
 
 async function init() {
-  const { apiKey } = await chrome.storage.local.get(["apiKey"]);
+  const { apiKey, canvasUrl } = await chrome.storage.local.get(["apiKey", "canvasUrl"]);
 
-  if (!apiKey) {
+  if (!apiKey || !canvasUrl) {
     showSettings();
     return;
   }
@@ -74,21 +81,27 @@ async function init() {
   loadChatHistory();
 }
 
-saveKeyButton.addEventListener("click", async () => {
+saveSettingsButton.addEventListener("click", async () => {
+  const canvasUrl = cleanCanvasUrl(canvasUrlInput.value);
   const key = apiKeyInput.value.trim();
+
+  if (!canvasUrl) {
+    settingsStatusEl.textContent = "Please enter your school's Canvas URL (e.g. rutgers.instructure.com).";
+    return;
+  }
 
   if (!key || !key.startsWith("sk-ant-")) {
     settingsStatusEl.textContent = 'Please enter a valid Claude API key (it should start with "sk-ant-").';
     return;
   }
 
-  await chrome.storage.local.set({ apiKey: key });
+  await chrome.storage.local.set({ canvasUrl, apiKey: key });
   showMain();
   checkIndexReady();
   loadChatHistory();
 });
 
-changeKeyButton.addEventListener("click", () => {
+changeSettingsButton.addEventListener("click", () => {
   showSettings();
 });
 

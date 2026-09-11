@@ -4,13 +4,12 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error(error));
 
-const BASE_URL = "https://rutgers.instructure.com/api/v1";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-sonnet-5";
 
-const SYSTEM_PROMPT = `You are a helpful assistant for a Rutgers student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, and assignment names/due dates/points), plus the results of any tools you call.
+const SYSTEM_PROMPT = `You are a helpful assistant for a college student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, and assignment names/due dates/points), plus the results of any tools you call.
 
 You have two tools available:
 - get_file_content: fetches the full extracted text of one specific file, when the summary's file name list alone isn't enough to answer the question.
@@ -57,7 +56,18 @@ async function fetchJSON(url) {
   return response.json();
 }
 
+async function getBaseUrl() {
+  const { canvasUrl } = await chrome.storage.local.get(["canvasUrl"]);
+
+  if (!canvasUrl) {
+    throw new Error("No Canvas URL set. Please add your school's Canvas URL in the extension settings.");
+  }
+
+  return `https://${canvasUrl}/api/v1`;
+}
+
 async function indexAllCourses() {
+  const BASE_URL = await getBaseUrl();
   const courses = await fetchJSON(`${BASE_URL}/courses?enrollment_state=active`);
   console.log(`Found ${courses.length} courses`);
 
@@ -329,4 +339,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Run once when the background worker starts
-getCourseIndex();
+getCourseIndex().catch(err => console.warn("Skipping initial course index:", err.message));

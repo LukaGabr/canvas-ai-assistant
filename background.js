@@ -231,7 +231,9 @@ async function callClaude(apiKey, messages) {
     body: JSON.stringify({
       model: CLAUDE_MODEL,
       max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      system: [
+        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }
+      ],
       tools: TOOLS,
       output_config: { effort: "low" },
       fallbacks: "default",
@@ -267,12 +269,29 @@ async function askClaude(question) {
   const messages = [
     {
       role: "user",
-      content: `Today's date is ${new Date().toISOString()}.\n\nCourse summary, across all active courses (JSON):\n${JSON.stringify(summary)}\n\nQuestion: ${question}`
+      content: [
+        {
+          type: "text",
+          text: `Course summary, across all active courses (JSON):\n${JSON.stringify(summary)}`,
+          cache_control: { type: "ephemeral" }
+        },
+        {
+          type: "text",
+          text: `Today's date is ${new Date().toISOString()}.\n\nQuestion: ${question}`
+        }
+      ]
     }
   ];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const data = await callClaude(apiKey, messages);
+
+    const usage = data.usage || {};
+    console.log(
+      `[cache] round ${round}: input=${usage.input_tokens ?? "?"} ` +
+      `cache_read=${usage.cache_read_input_tokens ?? 0} ` +
+      `cache_write=${usage.cache_creation_input_tokens ?? 0}`
+    );
 
     if (data.stop_reason === "refusal") {
       throw new Error("Claude declined to answer that question.");

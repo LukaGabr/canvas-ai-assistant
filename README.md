@@ -27,6 +27,15 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **Prompt caching.** Repeated context (the course summary, system instructions) within a session is cached, cutting the cost of follow-up questions by roughly 90%.
 - **PDF extraction runs in an offscreen document** — a Manifest V3 constraint (service workers can't spawn real workers) worked around using Chrome's offscreen document API alongside pdf.js.
 
+## Install
+
+**Chrome Web Store (recommended):**
+[Install Canvas AI Assistant](https://chromewebstore.google.com/detail/hnebmaenjbmhjjdhmhdidgamekemaihb)
+
+**From source (for developers, or to inspect the code first):** see Setup below.
+
+> New installs may briefly show a Chrome "not trusted by Enhanced Safe Browsing" warning — this is expected for any newly published extension and resolves automatically over time as the listing builds trust with Google. It's unrelated to what the extension actually does.
+
 ## Setup
 
 1. Clone this repository

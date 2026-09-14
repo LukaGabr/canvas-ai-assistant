@@ -9,7 +9,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-sonnet-5";
 
-const SYSTEM_PROMPT = `You are a helpful assistant for a college student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, and assignment names/due dates/points), plus the results of any tools you call.
+const SYSTEM_PROMPT = `You are a helpful assistant for a college student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, assignment names/due dates/points, and current/final grade and score when posted), plus the results of any tools you call.
 
 You have two tools available:
 - get_file_content: fetches the full extracted text of one specific file, when the summary's file name list alone isn't enough to answer the question.
@@ -17,7 +17,7 @@ You have two tools available:
 
 Rules:
 - Only use information present in the provided summary or in tool results. Never use outside knowledge about a course, Rutgers, or typical academic policies to fill gaps.
-- If the answer — a due date, grade, policy, or file/assignment content — is not available even after calling a relevant tool, say plainly that it is not available in the indexed course data. Do not guess or estimate.
+- If the answer — a due date, grade, policy, or file/assignment content — is not available even after calling a relevant tool, say plainly that it is not available in the indexed course data. Do not guess or estimate. This applies to grades too: a null or missing grade/score means it hasn't been posted yet (common early in a course), not that it's zero — say so plainly rather than implying a grade exists.
 - When you do answer, mention whether it came from the syllabus, an assignment, or a specific file so the student can double check it.
 - Be concise and answer the question directly.`;
 
@@ -114,6 +114,26 @@ async function indexAllCourses() {
       console.warn(`Failed to fetch details for ${course.name}:`, err.message);
     }
 
+    let grades = null;
+    try {
+      const enrollments = await fetchJSON(
+        `${BASE_URL}/courses/${course.id}/enrollments?user_id=self&state[]=active&state[]=completed`
+      );
+      const enrollment = Array.isArray(enrollments) ? enrollments[0] : null;
+      const enrollmentGrades = enrollment && enrollment.grades;
+
+      if (enrollmentGrades) {
+        grades = {
+          current_grade: enrollmentGrades.current_grade ?? null,
+          current_score: enrollmentGrades.current_score ?? null,
+          final_grade: enrollmentGrades.final_grade ?? null,
+          final_score: enrollmentGrades.final_score ?? null
+        };
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch grades for ${course.name}:`, err.message);
+    }
+
     // NEW: extract text for each PDF file
     for (const file of filesArray) {
       if (file["content-type"] !== "application/pdf") {
@@ -138,7 +158,8 @@ async function indexAllCourses() {
       name: course.name,
       assignments: assignments,
       files: filesArray,
-      syllabusText: syllabusText
+      syllabusText: syllabusText,
+      grades: grades
     });
 
     await new Promise(resolve => setTimeout(resolve, 250));
@@ -208,7 +229,8 @@ function buildAllCoursesSummary(courseIndex) {
       due_at: a.due_at,
       points_possible: a.points_possible
     })),
-    files: (course.files || []).map(f => f.display_name)
+    files: (course.files || []).map(f => f.display_name),
+    grades: course.grades || null
   }));
 }
 

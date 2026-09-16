@@ -15,6 +15,8 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **Auto-indexes every active course** — assignments, files, and syllabus content, pulled automatically
 - **Real PDF text extraction** — reads the actual content of lecture slides and readings, not just filenames
 - **Cross-course AI Q&A** — ask about any class without picking one from a dropdown first; the AI automatically figures out which course(s) and files are relevant
+- **Grade tracking** — see your current and final grade/score per course, with an honest "not posted yet" instead of implying a zero when nothing's been graded
+- **Short-term conversation memory** — natural follow-up questions ("what is it about?") work correctly within an active session, without needing to repeat context every time
 - **Persistent chat** — runs as a Chrome side panel, stays open while you browse, remembers your conversation across sessions
 - **Grounded answers only** — never guesses at due dates, grades, or policies; says plainly when something isn't in the indexed data, and cites its source
 - **Bring your own API key** — each user supplies their own Claude API key; no shared backend, no cost or data liability for anyone but the person using it
@@ -24,7 +26,8 @@ Canvas buries useful information across dozens of pages per course. This extensi
 
 - **No backend server.** The extension calls the Canvas API directly (using your session cookie, not a personal token) and the Claude API directly, both from the browser.
 - **Real tool-calling.** Instead of dumping every file's content into every request, the AI receives a lightweight summary across all your courses and can request a specific file's or assignment's full content on demand, only when it actually needs it.
-- **Prompt caching.** Repeated context (the course summary, system instructions) within a session is cached, cutting the cost of follow-up questions by roughly 90%.
+- **Prompt caching.** Repeated context (the course summary, system instructions) within a session is cached, cutting the cost of that repeated portion by roughly 90%.
+- **Conversation memory without breaking caching.** Recent turns are included as context for natural follow-ups, but kept in a separate, uncached part of each request — so the cached course summary and instructions stay untouched, preserving the caching benefit above.
 - **PDF extraction runs in an offscreen document** — a Manifest V3 constraint (service workers can't spawn real workers) worked around using Chrome's offscreen document API alongside pdf.js.
 
 ## Install
@@ -32,7 +35,7 @@ Canvas buries useful information across dozens of pages per course. This extensi
 **Chrome Web Store (recommended):**
 [Install Canvas AI Assistant](https://chromewebstore.google.com/detail/hnebmaenjbmhjjdhmhdidgamekemaihb)
 
-**From source (for developers, or to inspect the code first):** see Setup below.
+**From source (for developers, or to inspect the code first):** see Setup below. The source version may include newer features not yet published to the Web Store.
 
 > New installs may briefly show a Chrome "not trusted by Enhanced Safe Browsing" warning — this is expected for any newly published extension and resolves automatically over time as the listing builds trust with Google. It's unrelated to what the extension actually does.
 
@@ -51,6 +54,8 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - Only PDF files are text-extracted; PPTX/DOCX files are indexed by name only, not content
 - Canvas "Pages" (wiki-style content some instructors use, separate from the syllabus) aren't indexed yet
 - Schools running Canvas on a fully custom domain (not `*.instructure.com`) aren't currently supported
+- Only the current active-semester courses are indexed; past/completed semesters aren't accessible yet
+- Conversation memory only covers the last few exchanges within roughly a 30-minute active session, not your full chat history
 
 ## License
 

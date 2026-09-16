@@ -13,8 +13,22 @@ const askButton = document.getElementById("askButton");
 const statusEl = document.getElementById("status");
 const clearButton = document.getElementById("clearButton");
 
+const HISTORY_MAX_PAIRS = 3;
+const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
+
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
+}
+
+function getRecentHistoryForRequest(chatHistory) {
+  if (!chatHistory || chatHistory.length === 0) return [];
+
+  const lastMessage = chatHistory[chatHistory.length - 1];
+  const isNewSession = Date.now() - lastMessage.timestamp > SESSION_INACTIVITY_MS;
+
+  if (isNewSession) return [];
+
+  return chatHistory.slice(-HISTORY_MAX_PAIRS * 2);
 }
 
 function isPlausibleDomain(value) {
@@ -136,7 +150,7 @@ clearButton.addEventListener("click", async () => {
   emptyStateEl.hidden = false;
 });
 
-askButton.addEventListener("click", () => {
+askButton.addEventListener("click", async () => {
   const question = questionInput.value.trim();
 
   if (!question) return;
@@ -144,7 +158,10 @@ askButton.addEventListener("click", () => {
   askButton.disabled = true;
   statusEl.textContent = "Thinking...";
 
-  chrome.runtime.sendMessage({ type: "ASK_QUESTION", question }, async (response) => {
+  const { chatHistory } = await chrome.storage.local.get(["chatHistory"]);
+  const history = getRecentHistoryForRequest(chatHistory);
+
+  chrome.runtime.sendMessage({ type: "ASK_QUESTION", question, history }, async (response) => {
     askButton.disabled = false;
 
     if (chrome.runtime.lastError) {

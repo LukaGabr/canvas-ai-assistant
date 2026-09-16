@@ -304,8 +304,26 @@ async function callClaude(apiKey, messages) {
 }
 
 const MAX_TOOL_ROUNDS = 5;
+const HISTORY_ANSWER_MAX_CHARS = 500;
 
-async function askClaude(question) {
+function truncate(text, maxLength) {
+  if (!text || text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...`;
+}
+
+function formatHistoryBlock(history) {
+  if (!history || history.length === 0) return null;
+
+  const lines = history.map(entry => {
+    const speaker = entry.role === "user" ? "Student" : "Assistant";
+    const text = entry.role === "assistant" ? truncate(entry.text, HISTORY_ANSWER_MAX_CHARS) : entry.text;
+    return `${speaker}: ${text}`;
+  });
+
+  return `Recent conversation so far in this session (the new question below may follow up on it):\n${lines.join("\n")}`;
+}
+
+async function askClaude(question, history) {
   const { apiKey } = await chrome.storage.local.get(["apiKey"]);
 
   if (!apiKey) {
@@ -319,22 +337,26 @@ async function askClaude(question) {
   }
 
   const summary = buildAllCoursesSummary(courseIndex);
-  const messages = [
+  const historyText = formatHistoryBlock(history);
+
+  const content = [
     {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: `Course summary, across all active courses (JSON):\n${JSON.stringify(summary)}`,
-          cache_control: { type: "ephemeral" }
-        },
-        {
-          type: "text",
-          text: `Today's date is ${new Date().toISOString()}.\n\nQuestion: ${question}`
-        }
-      ]
+      type: "text",
+      text: `Course summary, across all active courses (JSON):\n${JSON.stringify(summary)}`,
+      cache_control: { type: "ephemeral" }
     }
   ];
+
+  if (historyText) {
+    content.push({ type: "text", text: historyText });
+  }
+
+  content.push({
+    type: "text",
+    text: `Today's date is ${new Date().toISOString()}.\n\nQuestion: ${question}`
+  });
+
+  const messages = [{ role: "user", content }];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const data = await callClaude(apiKey, messages);
@@ -388,7 +410,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "ASK_QUESTION") {
-    askClaude(message.question)
+    askClaude(message.question, message.history)
       .then(answer => sendResponse({ success: true, answer }))
       .catch(err => sendResponse({ success: false, error: err.message }));
 

@@ -15,6 +15,7 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **Auto-indexes every active course** — assignments, files, syllabus, and announcements, pulled automatically
 - **Real PDF text extraction** — reads the actual content of lecture slides and readings, not just filenames
 - **Cross-course AI Q&A** — ask about any class without picking one from a dropdown first; the AI automatically figures out which course(s) and files are relevant
+- **At-a-glance dashboard** — see your next few upcoming assignments, color-coded by urgency, right when you open the panel — no need to ask a question for something you just want to check quickly
 - **Grade tracking** — see your current and final grade/score per course, with an honest "not posted yet" instead of implying a zero when nothing's been graded
 - **Announcements** — see what's been posted in each course, with full message content available on request
 - **Short-term conversation memory** — natural follow-up questions ("what is it about?") work correctly within an active session, without needing to repeat context every time

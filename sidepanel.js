@@ -13,8 +13,17 @@ const askButton = document.getElementById("askButton");
 const statusEl = document.getElementById("status");
 const clearButton = document.getElementById("clearButton");
 
+const dueSoonCardsEl = document.getElementById("dueSoonCards");
+const viewAllDueSoonButton = document.getElementById("viewAllDueSoonButton");
+
 const HISTORY_MAX_PAIRS = 3;
 const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
+
+const DUE_SOON_DEFAULT_COUNT = 3;
+const DUE_SOON_URGENT_DAYS = 1;
+const DUE_SOON_SOON_DAYS = 3;
+
+let dueSoonExpanded = false;
 
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
@@ -68,6 +77,98 @@ async function checkIndexReady() {
   statusEl.textContent = "";
 }
 
+function daysUntil(dueAt) {
+  const now = new Date();
+  const due = new Date(dueAt);
+
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfDue = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+
+  return Math.round((startOfDue - startOfToday) / (24 * 60 * 60 * 1000));
+}
+
+function dueSoonUrgency(daysAway) {
+  if (daysAway <= DUE_SOON_URGENT_DAYS) return "due-urgent";
+  if (daysAway <= DUE_SOON_SOON_DAYS) return "due-soon";
+  return "due-later";
+}
+
+function dueSoonLabel(daysAway) {
+  if (daysAway <= 0) return "Due today";
+  if (daysAway === 1) return "Tomorrow";
+  return `In ${daysAway} days`;
+}
+
+function collectUpcomingAssignments(courseIndex) {
+  const now = Date.now();
+  const upcoming = [];
+
+  for (const course of courseIndex || []) {
+    for (const assignment of course.assignments || []) {
+      if (!assignment.due_at) continue;
+
+      const dueTime = new Date(assignment.due_at).getTime();
+      if (Number.isNaN(dueTime) || dueTime < now) continue;
+
+      upcoming.push({
+        name: assignment.name,
+        course_name: course.name,
+        due_at: assignment.due_at
+      });
+    }
+  }
+
+  upcoming.sort((a, b) => new Date(a.due_at) - new Date(b.due_at));
+  return upcoming;
+}
+
+function renderDueSoonCard(assignment) {
+  const daysAway = daysUntil(assignment.due_at);
+  const dueDate = new Date(assignment.due_at);
+  const month = dueDate.toLocaleString("en-US", { month: "short" }).toUpperCase();
+
+  const card = document.createElement("div");
+  card.className = `dueCard ${dueSoonUrgency(daysAway)}`;
+  card.innerHTML = `
+    <div class="dueBadge">${month} ${dueDate.getDate()}</div>
+    <div class="dueName"></div>
+    <div class="dueCourse"></div>
+    <div class="duePill">${dueSoonLabel(daysAway)}</div>
+  `;
+  card.querySelector(".dueName").textContent = assignment.name;
+  card.querySelector(".dueCourse").textContent = assignment.course_name;
+  return card;
+}
+
+async function renderDueSoon() {
+  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
+  const upcoming = collectUpcomingAssignments(courseIndex);
+
+  dueSoonCardsEl.innerHTML = "";
+
+  if (upcoming.length === 0) {
+    const empty = document.createElement("div");
+    empty.id = "dueSoonEmpty";
+    empty.textContent = "Nothing due soon.";
+    dueSoonCardsEl.appendChild(empty);
+    viewAllDueSoonButton.hidden = true;
+    return;
+  }
+
+  const visible = dueSoonExpanded ? upcoming : upcoming.slice(0, DUE_SOON_DEFAULT_COUNT);
+  for (const assignment of visible) {
+    dueSoonCardsEl.appendChild(renderDueSoonCard(assignment));
+  }
+
+  viewAllDueSoonButton.hidden = upcoming.length <= DUE_SOON_DEFAULT_COUNT;
+  viewAllDueSoonButton.textContent = dueSoonExpanded ? "Show less" : "View all →";
+}
+
+viewAllDueSoonButton.addEventListener("click", () => {
+  dueSoonExpanded = !dueSoonExpanded;
+  renderDueSoon();
+});
+
 function renderMessage(message) {
   emptyStateEl.hidden = true;
 
@@ -102,6 +203,7 @@ async function init() {
 
   showMain();
   checkIndexReady();
+  renderDueSoon();
   loadChatHistory();
 }
 
@@ -132,6 +234,7 @@ saveSettingsButton.addEventListener("click", async () => {
 
   chrome.runtime.sendMessage({ type: "REFRESH_COURSE_INDEX" }, () => {
     checkIndexReady();
+    renderDueSoon();
   });
 
   loadChatHistory();

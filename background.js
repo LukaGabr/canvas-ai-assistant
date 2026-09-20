@@ -9,11 +9,12 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_MODEL = "claude-sonnet-5";
 
-const SYSTEM_PROMPT = `You are a helpful assistant for a college student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, assignment names/due dates/points, and current/final grade and score when posted), plus the results of any tools you call.
+const SYSTEM_PROMPT = `You are a helpful assistant for a college student. You answer questions about their Canvas courses using ONLY the course data provided to you: a lightweight summary covering every one of their active courses (syllabus text, assignment names/due dates/points, current/final grade and score when posted, and announcement titles/post dates), plus the results of any tools you call.
 
-You have two tools available:
+You have three tools available:
 - get_file_content: fetches the full extracted text of one specific file, when the summary's file name list alone isn't enough to answer the question.
 - get_assignment_details: fetches one specific assignment's full description, when its name/due date/points alone aren't enough to answer the question.
+- get_announcement_details: fetches one specific announcement's full message text, when its title/post date alone aren't enough to answer the question.
 
 Rules:
 - Only use information present in the provided summary or in tool results. Never use outside knowledge about a course, Rutgers, or typical academic policies to fill gaps.
@@ -44,6 +45,19 @@ const TOOLS = [
         assignment_name: { type: "string", description: "The exact assignment name (as it appears in the course summary's assignments list)." }
       },
       required: ["course_id", "assignment_name"]
+    }
+  },
+  {
+    name: "get_announcement_details",
+    description: "Get the full message text of one specific announcement from one specific course. Call this only when the announcement's title and post date alone (already in the course summary) aren't enough to answer the question — e.g. the question asks what an announcement actually says.",
+    input_schema: {
+      type: "object",
+      properties: {
+        course_id: { type: "string", description: "The course's id, from the course summary." },
+        title: { type: "string", description: "The exact announcement title (as it appears in the course summary's announcements list)." },
+        posted_at: { type: "string", description: "The announcement's posted_at date (as it appears in the course summary), used together with the title to tell apart announcements that share the same title." }
+      },
+      required: ["course_id", "title", "posted_at"]
     }
   }
 ];
@@ -134,6 +148,21 @@ async function indexAllCourses() {
       console.warn(`Failed to fetch grades for ${course.name}:`, err.message);
     }
 
+    let announcements = [];
+    try {
+      const rawAnnouncements = await fetchJSON(
+        `${BASE_URL}/announcements?context_codes[]=course_${course.id}`
+      );
+      announcements = (Array.isArray(rawAnnouncements) ? rawAnnouncements : []).map(a => ({
+        title: a.title,
+        message: stripHtml(a.message),
+        posted_at: a.posted_at,
+        author: (a.author && a.author.display_name) || null
+      }));
+    } catch (err) {
+      console.warn(`Failed to fetch announcements for ${course.name}:`, err.message);
+    }
+
     // NEW: extract text for each PDF file
     for (const file of filesArray) {
       if (file["content-type"] !== "application/pdf") {
@@ -159,7 +188,8 @@ async function indexAllCourses() {
       assignments: assignments,
       files: filesArray,
       syllabusText: syllabusText,
-      grades: grades
+      grades: grades,
+      announcements: announcements
     });
 
     await new Promise(resolve => setTimeout(resolve, 250));
@@ -230,7 +260,11 @@ function buildAllCoursesSummary(courseIndex) {
       points_possible: a.points_possible
     })),
     files: (course.files || []).map(f => f.display_name),
-    grades: course.grades || null
+    grades: course.grades || null,
+    announcements: (course.announcements || []).map(a => ({
+      title: a.title,
+      posted_at: a.posted_at
+    }))
   }));
 }
 
@@ -259,6 +293,30 @@ function getAssignmentDetails(courseIndex, courseId, assignmentName) {
   return description || `"${assignmentName}" has no description text.`;
 }
 
+function getAnnouncementDetails(courseIndex, courseId, title, postedAt) {
+  const course = findCourse(courseIndex, courseId);
+  if (!course) return `No course found with id "${courseId}".`;
+
+  const announcements = course.announcements || [];
+  const exactMatch = announcements.find(a => a.title === title && a.posted_at === postedAt);
+
+  if (exactMatch) {
+    return exactMatch.message || `"${title}" has no message text.`;
+  }
+
+  const titleMatches = announcements.filter(a => a.title === title);
+
+  if (titleMatches.length === 1) {
+    return titleMatches[0].message || `"${title}" has no message text.`;
+  }
+
+  if (titleMatches.length > 1) {
+    return `Multiple announcements in ${course.name} are titled "${title}" — couldn't tell which one apart without a matching post date.`;
+  }
+
+  return `No announcement titled "${title}" found in ${course.name}.`;
+}
+
 function resolveToolUse(courseIndex, block) {
   if (block.name === "get_file_content") {
     return getFileContent(courseIndex, block.input.course_id, block.input.file_name);
@@ -266,6 +324,10 @@ function resolveToolUse(courseIndex, block) {
 
   if (block.name === "get_assignment_details") {
     return getAssignmentDetails(courseIndex, block.input.course_id, block.input.assignment_name);
+  }
+
+  if (block.name === "get_announcement_details") {
+    return getAnnouncementDetails(courseIndex, block.input.course_id, block.input.title, block.input.posted_at);
   }
 
   return `Unknown tool "${block.name}".`;

@@ -66,12 +66,19 @@
         display: flex;
         flex-direction: column;
       }
-      #dueSoonSection {
-        background: #f5f8fc;
+      .card {
         border-radius: 10px;
         padding: 12px;
-        margin-bottom: 10px;
         flex-shrink: 0;
+      }
+      .card-elevated {
+        background: #fff;
+        border: 1px solid #e6e9ee;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      }
+      #dueSoonSection {
+        background: #f5f8fc;
+        margin-bottom: 10px;
       }
       #dueSoonHeader {
         display: flex;
@@ -224,6 +231,66 @@
         color: #555;
         min-height: 16px;
       }
+      .field {
+        border: 1px solid #dde2e8;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #fbfbfc;
+      }
+      .field:focus {
+        outline: none;
+        border-color: #06c;
+        box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+      }
+      .primaryButton {
+        border: none;
+        border-radius: 8px;
+        background: #06c;
+        color: #fff;
+        font-weight: bold;
+      }
+      .primaryButton:hover:not(:disabled) {
+        background: #0057b0;
+      }
+      .primaryButton:focus-visible {
+        outline: 2px solid #06c;
+        outline-offset: 2px;
+      }
+      #composerFooter {
+        display: flex;
+        align-items: center;
+        border-top: 1px solid #e6e9ee;
+        margin-top: 12px;
+        padding-top: 8px;
+      }
+      .ghostButton {
+        width: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #6b7280;
+        font-size: 12px;
+      }
+      .ghostButton:hover {
+        background: #f2f3f5;
+        color: #374151;
+      }
+      .ghostButton:focus-visible {
+        outline: 2px solid #06c;
+        outline-offset: 1px;
+      }
+      .ghostButton svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+      #changeSettingsButton {
+        margin-left: auto;
+      }
       .linkButton {
         width: auto;
         display: inline-block;
@@ -246,24 +313,24 @@
 
     <div id="settingsSection">
       <label for="canvasUrlInput">Canvas URL</label>
-      <input type="text" id="canvasUrlInput" placeholder="e.g. rutgers.instructure.com" />
+      <input type="text" id="canvasUrlInput" class="field" placeholder="e.g. rutgers.instructure.com" />
       <p class="hint">
         Your school's Canvas domain, without "https://" — check your browser's address bar while
         on Canvas.
       </p>
 
       <label for="apiKeyInput">Claude API Key</label>
-      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+      <input type="password" id="apiKeyInput" class="field" placeholder="sk-ant-..." />
       <p class="hint">
         Your key is stored only on this device and sent only to Anthropic's API. Treat it like a
         password — anyone with access to your browser could technically access it.
       </p>
-      <button id="saveSettingsButton">Save</button>
+      <button id="saveSettingsButton" class="primaryButton">Save</button>
       <div id="settingsStatus"></div>
     </div>
 
     <div id="mainSection">
-      <div id="dueSoonSection">
+      <div id="dueSoonSection" class="card">
         <div id="dueSoonHeader">
           <span>Due Soon</span>
           <button id="viewAllDueSoonButton" class="linkButton">View all →</button>
@@ -281,14 +348,29 @@
 
       <div id="status"></div>
 
-      <label for="questionInput">Question</label>
-      <textarea id="questionInput" placeholder="e.g. When is the next assignment due?"></textarea>
+      <div id="composer" class="card card-elevated">
+        <label for="questionInput">Question</label>
+        <textarea id="questionInput" class="field" placeholder="e.g. When is the next assignment due?"></textarea>
 
-      <button id="askButton">Ask</button>
+        <button id="askButton" class="primaryButton">Ask</button>
 
-      <div>
-        <button id="clearButton" class="linkButton">Clear conversation</button>
-        <button id="changeSettingsButton" class="linkButton">Change settings</button>
+        <div id="composerFooter">
+          <button id="clearButton" class="ghostButton">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 6h18" />
+              <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            </svg>
+            Clear conversation
+          </button>
+          <button id="changeSettingsButton" class="ghostButton">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Settings
+          </button>
+        </div>
       </div>
     </div>
 

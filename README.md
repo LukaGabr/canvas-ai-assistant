@@ -23,6 +23,7 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **Grounded answers only** — never guesses at due dates, grades, or policies; says plainly when something isn't in the indexed data, and cites its source
 - **Bring your own API key** — each user supplies their own Claude API key; no shared backend, no cost or data liability for anyone but the person using it
 - **Works at any Canvas-based school** — not hardcoded to one university
+- **Sync visibility and manual refresh** — see exactly how long ago your data was last pulled from Canvas, with a one-click refresh for whenever you need current data immediately instead of waiting on the automatic daily sync
 
 ## How it works (technical overview)
 

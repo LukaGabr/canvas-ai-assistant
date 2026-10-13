@@ -16,6 +16,10 @@ const clearButton = document.getElementById("clearButton");
 const dueSoonCardsEl = document.getElementById("dueSoonCards");
 const viewAllDueSoonButton = document.getElementById("viewAllDueSoonButton");
 
+const syncRowEl = document.getElementById("syncRow");
+const lastSyncedTextEl = document.getElementById("lastSyncedText");
+const refreshButton = document.getElementById("refreshButton");
+
 const HISTORY_MAX_PAIRS = 3;
 const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
 
@@ -23,7 +27,13 @@ const DUE_SOON_DEFAULT_COUNT = 3;
 const DUE_SOON_URGENT_DAYS = 1;
 const DUE_SOON_SOON_DAYS = 3;
 
+const LAST_SYNCED_TICK_MS = 60 * 1000;
+
 let dueSoonExpanded = false;
+let isRefreshing = false;
+// { message, lastSyncedAtStart } — lastSyncedAtStart lets a newer successful
+// sync (from any source) automatically clear a stale error.
+let lastRefreshError = null;
 
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
@@ -169,6 +179,79 @@ viewAllDueSoonButton.addEventListener("click", () => {
   renderDueSoon();
 });
 
+function formatRelativeTime(timestamp) {
+  const minutes = Math.floor((Date.now() - timestamp) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+async function renderLastSynced() {
+  if (isRefreshing) return;
+
+  const { lastSynced } = await chrome.storage.local.get(["lastSynced"]);
+
+  // Only a successful index writes lastSynced, so any change since the failed
+  // refresh started means a newer sync succeeded and the error is stale.
+  if (lastRefreshError && lastSynced !== lastRefreshError.lastSyncedAtStart) {
+    lastRefreshError = null;
+  }
+
+  let text = lastSynced ? `Synced ${formatRelativeTime(lastSynced)}` : "Not synced yet";
+  if (lastRefreshError) text += " · refresh failed";
+
+  lastSyncedTextEl.textContent = text;
+  syncRowEl.classList.toggle("sync-error", Boolean(lastRefreshError));
+  syncRowEl.title = lastRefreshError ? lastRefreshError.message : "";
+}
+
+// Shared by the settings-save flow and the manual refresh button.
+async function refreshCourseIndex() {
+  isRefreshing = true;
+  refreshButton.disabled = true;
+  refreshButton.classList.add("spinning");
+  lastSyncedTextEl.textContent = "Syncing with Canvas…";
+
+  const { lastSynced: lastSyncedAtStart } = await chrome.storage.local.get(["lastSynced"]);
+
+  const error = await new Promise(resolve => {
+    chrome.runtime.sendMessage({ type: "REFRESH_COURSE_INDEX" }, (response) => {
+      if (chrome.runtime.lastError) resolve(chrome.runtime.lastError.message);
+      else if (!response) resolve("No response from background script.");
+      else resolve(response.success ? null : response.error);
+    });
+  });
+
+  isRefreshing = false;
+  lastRefreshError = error ? { message: error, lastSyncedAtStart } : null;
+  refreshButton.disabled = false;
+  refreshButton.classList.remove("spinning");
+
+  renderLastSynced();
+  renderDueSoon();
+  return { success: !error, error };
+}
+
+refreshButton.addEventListener("click", async () => {
+  const { success } = await refreshCourseIndex();
+
+  // Only clear a previous error state on success; a failed manual refresh
+  // shouldn't disable Ask while the cached index is still usable.
+  if (success) checkIndexReady();
+});
+
+// Keep the relative time accurate while the panel stays open, and pick up
+// automatic re-indexes the background worker does on its own.
+setInterval(renderLastSynced, LAST_SYNCED_TICK_MS);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.lastSynced) renderLastSynced();
+});
+
 function renderMessage(message) {
   emptyStateEl.hidden = true;
 
@@ -204,6 +287,7 @@ async function init() {
   showMain();
   checkIndexReady();
   renderDueSoon();
+  renderLastSynced();
   loadChatHistory();
 }
 
@@ -232,10 +316,7 @@ saveSettingsButton.addEventListener("click", async () => {
   askButton.disabled = true;
   statusEl.textContent = "Checking your Canvas URL...";
 
-  chrome.runtime.sendMessage({ type: "REFRESH_COURSE_INDEX" }, () => {
-    checkIndexReady();
-    renderDueSoon();
-  });
+  refreshCourseIndex().then(() => checkIndexReady());
 
   loadChatHistory();
 });

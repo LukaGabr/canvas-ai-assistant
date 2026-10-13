@@ -15,15 +15,22 @@ async function extractPdfText(fileUrl) {
   const response = await fetch(fileUrl, { credentials: "include" });
   const arrayBuffer = await response.arrayBuffer();
 
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = "";
+  // Destroying the loading task also tears down the pdf.js Worker thread it
+  // spawned; without this, every extracted PDF leaks a Worker.
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  try {
+    const pdf = await loadingTask.promise;
+    let fullText = "";
 
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(" ");
-    fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const pageText = content.items.map(item => item.str).join(" ");
+      fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
+    }
+
+    return fullText;
+  } finally {
+    await loadingTask.destroy();
   }
-
-  return fullText;
 }

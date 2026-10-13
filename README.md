@@ -58,7 +58,6 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - Schools running Canvas on a fully custom domain (not `*.instructure.com`) aren't currently supported
 - Only the current active-semester courses are indexed; past/completed semesters aren't accessible yet
 - Conversation memory only covers the last few exchanges within roughly a 30-minute active session, not your full chat history
-- Closing the side panel mid-sync and reopening it re-enables the ↻ refresh button while the background is still indexing, so clicking it starts a second, parallel index run (extra Canvas traffic; the last write wins). Fixing this needs an in-flight-promise guard in `getCourseIndex()` in `background.js`
 
 ## License
 

@@ -204,6 +204,12 @@ async function indexAllCourses() {
   return fullData;
 }
 
+// Shared by every caller while an index run is in progress, so overlapping
+// triggers (startup, manual refresh, settings save) join one run instead of
+// starting parallel ones. Keyed by base URL so a Canvas URL change mid-run
+// starts a fresh run rather than returning the old school's data.
+let inFlightIndex = null; // { baseUrl, promise }
+
 async function getCourseIndex(forceRefresh = false) {
   const stored = await chrome.storage.local.get(["courseIndex", "lastSynced"]);
 
@@ -215,8 +221,18 @@ async function getCourseIndex(forceRefresh = false) {
     return stored.courseIndex;
   }
 
+  const baseUrl = await getBaseUrl();
+  if (inFlightIndex && inFlightIndex.baseUrl === baseUrl) {
+    console.log("Index already in progress — joining it");
+    return inFlightIndex.promise;
+  }
+
   console.log("Cache missing or stale — re-indexing from Canvas");
-  return indexAllCourses();
+  const promise = indexAllCourses().finally(() => {
+    if (inFlightIndex?.promise === promise) inFlightIndex = null;
+  });
+  inFlightIndex = { baseUrl, promise };
+  return promise;
 }
 
 async function ensureOffscreenDocument() {

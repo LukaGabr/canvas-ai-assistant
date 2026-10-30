@@ -20,6 +20,10 @@ const syncRowEl = document.getElementById("syncRow");
 const lastSyncedTextEl = document.getElementById("lastSyncedText");
 const refreshButton = document.getElementById("refreshButton");
 
+const themeToggleButton = document.getElementById("themeToggleButton");
+const themeMoonIcon = document.getElementById("themeMoonIcon");
+const themeSunIcon = document.getElementById("themeSunIcon");
+
 const HISTORY_MAX_PAIRS = 3;
 const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
 
@@ -28,6 +32,11 @@ const DUE_SOON_URGENT_DAYS = 1;
 const DUE_SOON_SOON_DAYS = 3;
 
 const LAST_SYNCED_TICK_MS = 60 * 1000;
+
+// chrome.storage.local "theme" is the source of truth. localStorage mirrors it
+// because only a synchronous read can apply the theme before the first paint.
+const THEME_STORAGE_KEY = "theme";
+const systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
 let dueSoonExpanded = false;
 let isRefreshing = false;
@@ -38,6 +47,74 @@ let lastRefreshError = null;
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
 }
+
+function isValidTheme(value) {
+  return value === "light" || value === "dark";
+}
+
+function readCachedTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedTheme(theme) {
+  try {
+    if (theme) localStorage.setItem(THEME_STORAGE_KEY, theme);
+    else localStorage.removeItem(THEME_STORAGE_KEY);
+  } catch {
+    // The chrome.storage.local value still applies once it loads.
+  }
+}
+
+function getEffectiveTheme() {
+  const savedTheme = document.documentElement.dataset.theme;
+  if (isValidTheme(savedTheme)) return savedTheme;
+  return systemDarkQuery.matches ? "dark" : "light";
+}
+
+function updateThemeToggleButton() {
+  const isDark = getEffectiveTheme() === "dark";
+  const label = isDark ? "Switch to light mode" : "Switch to dark mode";
+
+  // SVG elements have no .hidden property, so set the attribute directly.
+  themeMoonIcon.toggleAttribute("hidden", isDark);
+  themeSunIcon.toggleAttribute("hidden", !isDark);
+  themeToggleButton.title = label;
+  themeToggleButton.setAttribute("aria-label", label);
+}
+
+// A missing or invalid value means "follow the system theme".
+function applyTheme(theme) {
+  if (isValidTheme(theme)) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+
+  writeCachedTheme(isValidTheme(theme) ? theme : null);
+  updateThemeToggleButton();
+}
+
+async function loadSavedTheme() {
+  const { [THEME_STORAGE_KEY]: savedTheme } = await chrome.storage.local.get([THEME_STORAGE_KEY]);
+  applyTheme(savedTheme);
+}
+
+applyTheme(readCachedTheme());
+loadSavedTheme();
+
+themeToggleButton.addEventListener("click", async () => {
+  const nextTheme = getEffectiveTheme() === "dark" ? "light" : "dark";
+  applyTheme(nextTheme);
+  await chrome.storage.local.set({ [THEME_STORAGE_KEY]: nextTheme });
+});
+
+// Follow system changes while no theme is saved, and keep other open panels
+// (one per window) in sync when the theme is toggled in any of them.
+systemDarkQuery.addEventListener("change", updateThemeToggleButton);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[THEME_STORAGE_KEY]) applyTheme(changes[THEME_STORAGE_KEY].newValue);
+});
 
 function getRecentHistoryForRequest(chatHistory) {
   if (!chatHistory || chatHistory.length === 0) return [];

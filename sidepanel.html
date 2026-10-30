@@ -3,6 +3,60 @@
   <head>
     <meta charset="UTF-8" />
     <style>
+      :root {
+        color-scheme: light dark;
+
+        --page-background: light-dark(#fff, #16181d);
+        --text-primary: light-dark(#000, #e6e8eb);
+        --text-secondary: light-dark(#555, #c3c8cf);
+        --text-muted: light-dark(#777, #a8afb9);
+        --text-subtle: light-dark(#888, #9aa1ab);
+        --error-text: light-dark(#c00, #ff9b91);
+        --sync-error-text: light-dark(#b3261e, #ff9b91);
+        --link-text: light-dark(#06c, #7ab8ff);
+        --focus-outline: light-dark(#06c, #7ab8ff);
+
+        --card-background: light-dark(#fff, #1f2329);
+        --card-border: light-dark(#e6e9ee, #323842);
+        --card-shadow: light-dark(rgba(16, 24, 40, 0.04), rgba(0, 0, 0, 0.3));
+        --due-soon-section-background: light-dark(#f5f8fc, #1c2129);
+        --due-card-background: light-dark(#fff, #262b33);
+
+        --urgency-high-card-background: light-dark(#fdf1f1, #2e1e20);
+        --urgency-high-background: light-dark(#fde2e2, #4d2629);
+        --urgency-high-text: light-dark(#b3261e, #ffb4ab);
+        --urgency-medium-card-background: light-dark(#fdf6ea, #2b251a);
+        --urgency-medium-background: light-dark(#fdecc8, #4a3b18);
+        --urgency-medium-text: light-dark(#8a5a00, #f5cb7a);
+        --urgency-low-card-background: light-dark(#f2f3f5, #252930);
+        --urgency-low-background: light-dark(#e8eaed, #363c45);
+        --urgency-low-text: light-dark(#444, #d3d7dd);
+
+        --user-bubble-background: light-dark(#daf0ff, #173a5a);
+        --user-bubble-text: light-dark(#003a5c, #dcefff);
+        --assistant-bubble-background: light-dark(#f0f0f0, #2a2e35);
+        --assistant-bubble-text: light-dark(#222, #e6e8eb);
+
+        --input-background: light-dark(#fbfbfc, #14171b);
+        --input-border: light-dark(#dde2e8, #3a414b);
+        --input-text: light-dark(#000, #e6e8eb);
+        --input-focus-border: light-dark(#06c, #7ab8ff);
+        --input-focus-ring: light-dark(rgba(0, 102, 204, 0.15), rgba(122, 184, 255, 0.25));
+
+        --primary-button-background: light-dark(#06c, #7ab8ff);
+        --primary-button-hover-background: light-dark(#0057b0, #9ccaff);
+        --primary-button-text: light-dark(#fff, #0b1b2e);
+
+        --ghost-button-text: light-dark(#6b7280, #a8afb9);
+        --ghost-button-hover-background: light-dark(#f2f3f5, #2b3038);
+        --ghost-button-hover-text: light-dark(#374151, #e6e8eb);
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+      }
       html,
       body {
         height: 100%;
@@ -14,6 +68,8 @@
         box-sizing: border-box;
         padding: 16px;
         font-family: sans-serif;
+        background: var(--page-background);
+        color: var(--text-primary);
       }
       h1 {
         font-size: 16px;
@@ -22,7 +78,7 @@
       label {
         display: block;
         font-size: 12px;
-        color: #555;
+        color: var(--text-secondary);
         margin-bottom: 4px;
       }
       input,
@@ -51,13 +107,13 @@
       }
       .hint {
         font-size: 11px;
-        color: #777;
+        color: var(--text-muted);
         line-height: 1.3;
         margin: -4px 0 10px 0;
       }
       #settingsStatus {
         font-size: 12px;
-        color: #c00;
+        color: var(--error-text);
         margin-top: 8px;
       }
       #mainSection {
@@ -72,12 +128,12 @@
         flex-shrink: 0;
       }
       .card-elevated {
-        background: #fff;
-        border: 1px solid #e6e9ee;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        background: var(--card-background);
+        border: 1px solid var(--card-border);
+        box-shadow: 0 1px 2px var(--card-shadow);
       }
       #dueSoonSection {
-        background: #f5f8fc;
+        background: var(--due-soon-section-background);
         margin-bottom: 10px;
       }
       #dueSoonHeader {
@@ -102,7 +158,7 @@
         flex: 1 1 90px;
         min-width: 90px;
         box-sizing: border-box;
-        background: #fff;
+        background: var(--due-card-background);
         border-radius: 8px;
         padding: 8px;
       }
@@ -120,7 +176,7 @@
         margin-bottom: 2px;
       }
       .dueCourse {
-        color: #777;
+        color: var(--text-muted);
         font-size: 11px;
         margin-bottom: 6px;
       }
@@ -131,32 +187,32 @@
         border-radius: 10px;
       }
       .due-urgent {
-        background: #fdf1f1;
+        background: var(--urgency-high-card-background);
       }
       .due-urgent .dueBadge,
       .due-urgent .duePill {
-        background: #fde2e2;
-        color: #b3261e;
+        background: var(--urgency-high-background);
+        color: var(--urgency-high-text);
       }
       .due-soon {
-        background: #fdf6ea;
+        background: var(--urgency-medium-card-background);
       }
       .due-soon .dueBadge,
       .due-soon .duePill {
-        background: #fdecc8;
-        color: #8a5a00;
+        background: var(--urgency-medium-background);
+        color: var(--urgency-medium-text);
       }
       .due-later {
-        background: #f2f3f5;
+        background: var(--urgency-low-card-background);
       }
       .due-later .dueBadge,
       .due-later .duePill {
-        background: #e8eaed;
-        color: #444;
+        background: var(--urgency-low-background);
+        color: var(--urgency-low-text);
       }
       #dueSoonEmpty {
         font-size: 12px;
-        color: #888;
+        color: var(--text-subtle);
       }
       #syncRow {
         display: flex;
@@ -164,10 +220,10 @@
         gap: 6px;
         margin-top: 10px;
         font-size: 11px;
-        color: #888;
+        color: var(--text-subtle);
       }
       #syncRow.sync-error {
-        color: #b3261e;
+        color: var(--sync-error-text);
       }
       #refreshButton {
         width: auto;
@@ -181,7 +237,7 @@
         color: inherit;
       }
       #refreshButton:hover:not(:disabled) {
-        color: #06c;
+        color: var(--link-text);
       }
       #refreshButton.spinning {
         animation: spin 1s linear infinite;
@@ -203,7 +259,7 @@
       }
       #emptyState {
         font-size: 12px;
-        color: #888;
+        color: var(--text-subtle);
         text-align: center;
         margin-top: 20px;
       }
@@ -218,48 +274,49 @@
       }
       .msg-user {
         align-self: flex-end;
-        background: #daf0ff;
-        color: #003a5c;
+        background: var(--user-bubble-background);
+        color: var(--user-bubble-text);
       }
       .msg-assistant {
         align-self: flex-start;
-        background: #f0f0f0;
-        color: #222;
+        background: var(--assistant-bubble-background);
+        color: var(--assistant-bubble-text);
       }
       #status {
         font-size: 12px;
-        color: #555;
+        color: var(--text-secondary);
         min-height: 16px;
       }
       .field {
-        border: 1px solid #dde2e8;
+        border: 1px solid var(--input-border);
         border-radius: 8px;
         padding: 8px 10px;
-        background: #fbfbfc;
+        background: var(--input-background);
+        color: var(--input-text);
       }
       .field:focus {
         outline: none;
-        border-color: #06c;
-        box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.15);
+        border-color: var(--input-focus-border);
+        box-shadow: 0 0 0 3px var(--input-focus-ring);
       }
       .primaryButton {
         border: none;
         border-radius: 8px;
-        background: #06c;
-        color: #fff;
+        background: var(--primary-button-background);
+        color: var(--primary-button-text);
         font-weight: bold;
       }
       .primaryButton:hover:not(:disabled) {
-        background: #0057b0;
+        background: var(--primary-button-hover-background);
       }
       .primaryButton:focus-visible {
-        outline: 2px solid #06c;
+        outline: 2px solid var(--focus-outline);
         outline-offset: 2px;
       }
       #composerFooter {
         display: flex;
         align-items: center;
-        border-top: 1px solid #e6e9ee;
+        border-top: 1px solid var(--card-border);
         margin-top: 12px;
         padding-top: 8px;
       }
@@ -272,15 +329,15 @@
         border: none;
         border-radius: 6px;
         background: transparent;
-        color: #6b7280;
+        color: var(--ghost-button-text);
         font-size: 12px;
       }
       .ghostButton:hover {
-        background: #f2f3f5;
-        color: #374151;
+        background: var(--ghost-button-hover-background);
+        color: var(--ghost-button-hover-text);
       }
       .ghostButton:focus-visible {
-        outline: 2px solid #06c;
+        outline: 2px solid var(--focus-outline);
         outline-offset: 1px;
       }
       .ghostButton svg {
@@ -288,7 +345,7 @@
         height: 14px;
         flex-shrink: 0;
       }
-      #changeSettingsButton {
+      #themeToggleButton {
         margin-left: auto;
       }
       .linkButton {
@@ -300,13 +357,14 @@
         margin-top: 12px;
         margin-right: 12px;
         font-size: 12px;
-        color: #06c;
+        color: var(--link-text);
         text-decoration: underline;
       }
       [hidden] {
         display: none !important;
       }
     </style>
+    <script src="sidepanel.js" defer blocking="render"></script>
   </head>
   <body>
     <h1>Canvas AI Assistant</h1>
@@ -363,6 +421,15 @@
             </svg>
             Clear conversation
           </button>
+          <button id="themeToggleButton" class="ghostButton" title="Switch to dark mode" aria-label="Switch to dark mode">
+            <svg id="themeMoonIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+            <svg id="themeSunIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          </button>
           <button id="changeSettingsButton" class="ghostButton">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="3" />
@@ -373,7 +440,5 @@
         </div>
       </div>
     </div>
-
-    <script src="sidepanel.js"></script>
   </body>
 </html>

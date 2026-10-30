@@ -210,6 +210,7 @@ button:disabled {
   color: var(--text-subtle);
 }
 #syncRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -240,6 +241,40 @@ button:disabled {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+#syncProgressBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--card-border);
+}
+#syncProgressFill {
+  height: 100%;
+  background: var(--link-text);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+#syncProgressBar.indeterminate #syncProgressFill {
+  width: 30%;
+  animation: syncProgressSlide 1.2s ease-in-out infinite;
+}
+@keyframes syncProgressSlide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #syncProgressBar.indeterminate #syncProgressFill {
+    animation: none;
+    visibility: hidden;
   }
 }
 #messageList {

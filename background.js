@@ -89,10 +89,11 @@ async function getBaseUrl() {
   return `https://${canvasUrl}/api/v1`;
 }
 
-async function indexAllCourses() {
+async function indexAllCourses(reportProgress = async () => {}) {
   const BASE_URL = await getBaseUrl();
   const courses = await fetchJSON(`${BASE_URL}/courses?enrollment_state=active`);
   console.log(`Found ${courses.length} courses`);
+  await reportProgress(0, courses.length);
 
   const fullData = [];
 
@@ -191,6 +192,7 @@ async function indexAllCourses() {
       grades: grades,
       announcements: announcements
     });
+    await reportProgress(fullData.length, courses.length);
 
     await new Promise(resolve => setTimeout(resolve, 250));
   }
@@ -210,6 +212,12 @@ async function indexAllCourses() {
 // starts a fresh run rather than returning the old school's data.
 let inFlightIndex = null; // { baseUrl, promise }
 
+// Bumped for every new index run; only the newest run writes or clears
+// syncProgress, so an older run still finishing after a Canvas URL change
+// can't overwrite or hide the newer run's progress. Seeded from the clock so
+// run ids stay unique across worker restarts.
+let latestSyncRunId = Date.now();
+
 async function getCourseIndex(forceRefresh = false) {
   const stored = await chrome.storage.local.get(["courseIndex", "lastSynced"]);
 
@@ -227,9 +235,22 @@ async function getCourseIndex(forceRefresh = false) {
     return inFlightIndex.promise;
   }
 
+  const runId = ++latestSyncRunId;
+  const reportProgress = (completedCourses, totalCourses) => {
+    if (runId !== latestSyncRunId) return Promise.resolve();
+    return chrome.storage.local
+      .set({ syncProgress: { runId, completedCourses, totalCourses } })
+      .catch(err => console.warn("Couldn't save sync progress:", err.message));
+  };
+
   console.log("Cache missing or stale — re-indexing from Canvas");
-  const promise = indexAllCourses().finally(() => {
+  reportProgress(0, null);
+  const promise = indexAllCourses(reportProgress).finally(() => {
     if (inFlightIndex?.promise === promise) inFlightIndex = null;
+    if (runId === latestSyncRunId) {
+      chrome.storage.local.remove("syncProgress")
+        .catch(err => console.warn("Couldn't clear sync progress:", err.message));
+    }
   });
   inFlightIndex = { baseUrl, promise };
   return promise;
@@ -470,6 +491,10 @@ async function askClaude(question, history) {
 
   throw new Error("Claude needed too many tool calls to answer this question. Try asking something more specific.");
 }
+
+// No index run survives a worker restart, so saved progress here is left over
+// from a run that was cut off. Cleared before anything can start a new run.
+chrome.storage.local.remove("syncProgress");
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "REFRESH_COURSE_INDEX") {

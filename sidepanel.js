@@ -19,6 +19,8 @@ const viewAllDueSoonButton = document.getElementById("viewAllDueSoonButton");
 const syncRowEl = document.getElementById("syncRow");
 const lastSyncedTextEl = document.getElementById("lastSyncedText");
 const refreshButton = document.getElementById("refreshButton");
+const syncProgressBar = document.getElementById("syncProgressBar");
+const syncProgressFill = document.getElementById("syncProgressFill");
 
 const themeToggleButton = document.getElementById("themeToggleButton");
 const themeMoonIcon = document.getElementById("themeMoonIcon");
@@ -33,6 +35,15 @@ const DUE_SOON_SOON_DAYS = 3;
 
 const LAST_SYNCED_TICK_MS = 60 * 1000;
 
+const SYNC_PROGRESS_STEP_MS = 400;
+const SYNC_PROGRESS_CREEP_MS = 45 * 1000;
+// How far into the current course's step the creep may go. Below 1, so the
+// bar only reaches a step boundary when that course really finishes.
+const SYNC_PROGRESS_CREEP_LIMIT = 0.85;
+// Decelerates hard: visible movement at first, then barely any.
+const SYNC_PROGRESS_CREEP_EASING = "cubic-bezier(0.1, 0.7, 0.3, 1)";
+const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
 // chrome.storage.local "theme" is the source of truth. localStorage mirrors it
 // because only a synchronous read can apply the theme before the first paint.
 const THEME_STORAGE_KEY = "theme";
@@ -43,6 +54,11 @@ let isRefreshing = false;
 // { message, lastSyncedAtStart } — lastSyncedAtStart lets a newer successful
 // sync (from any source) automatically clear a stale error.
 let lastRefreshError = null;
+
+let renderedSyncRunId = null;
+let renderedSyncWasDeterminate = false;
+let syncProgressTimer = null;
+let hasReceivedSyncProgressChange = false;
 
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
@@ -327,6 +343,76 @@ refreshButton.addEventListener("click", async () => {
 setInterval(renderLastSynced, LAST_SYNCED_TICK_MS);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.lastSynced) renderLastSynced();
+});
+
+function setSyncProgressFill(fraction, transitionMs = 0, easing = "ease-out") {
+  syncProgressFill.style.transition = transitionMs > 0 ? `transform ${transitionMs}ms ${easing}` : "none";
+  syncProgressFill.style.transform = `scaleX(${fraction})`;
+
+  // Apply an instant jump now, so a transition set right after starts from here.
+  if (transitionMs === 0) syncProgressFill.getBoundingClientRect();
+}
+
+function renderSyncProgress(syncProgress) {
+  clearTimeout(syncProgressTimer);
+
+  if (!syncProgress) {
+    if (syncProgressBar.hidden) return;
+
+    // Hold briefly so a final step can finish gliding to full before hiding.
+    syncProgressTimer = setTimeout(() => {
+      syncProgressBar.hidden = true;
+      renderedSyncRunId = null;
+      renderedSyncWasDeterminate = false;
+    }, SYNC_PROGRESS_STEP_MS);
+    return;
+  }
+
+  const { runId, completedCourses, totalCourses } = syncProgress;
+  const isDeterminate = Number.isInteger(totalCourses) && totalCourses > 0;
+  const canAnimate = !reducedMotionQuery.matches;
+  // Snap instead of gliding when this panel first sees a run (opened mid-sync,
+  // or a new run replaced the old one), so the bar never animates backwards.
+  const shouldGlide = canAnimate && runId === renderedSyncRunId && renderedSyncWasDeterminate;
+
+  renderedSyncRunId = runId;
+  renderedSyncWasDeterminate = isDeterminate;
+  syncProgressBar.hidden = false;
+  syncProgressBar.classList.toggle("indeterminate", !isDeterminate);
+
+  if (!isDeterminate) {
+    syncProgressFill.style.transition = "";
+    syncProgressFill.style.transform = "";
+    syncProgressBar.removeAttribute("aria-valuenow");
+    syncProgressBar.removeAttribute("aria-valuemax");
+    return;
+  }
+
+  const finishedCourses = Math.min(completedCourses, totalCourses);
+  syncProgressBar.setAttribute("aria-valuemax", totalCourses);
+  syncProgressBar.setAttribute("aria-valuenow", finishedCourses);
+
+  setSyncProgressFill(finishedCourses / totalCourses, shouldGlide ? SYNC_PROGRESS_STEP_MS : 0);
+
+  if (!canAnimate || finishedCourses === totalCourses) return;
+
+  const creepTarget = (finishedCourses + SYNC_PROGRESS_CREEP_LIMIT) / totalCourses;
+  syncProgressTimer = setTimeout(
+    () => setSyncProgressFill(creepTarget, SYNC_PROGRESS_CREEP_MS, SYNC_PROGRESS_CREEP_EASING),
+    shouldGlide ? SYNC_PROGRESS_STEP_MS : 0
+  );
+}
+
+// Driven by storage rather than by this panel's own refresh, so the bar also
+// shows for syncs started at startup, by another window, or before this panel opened.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.syncProgress) return;
+  hasReceivedSyncProgressChange = true;
+  renderSyncProgress(changes.syncProgress.newValue);
+});
+chrome.storage.local.get(["syncProgress"]).then(({ syncProgress }) => {
+  // A change event that arrived first is newer than this snapshot.
+  if (!hasReceivedSyncProgressChange) renderSyncProgress(syncProgress);
 });
 
 function renderMessage(message) {

@@ -342,6 +342,13 @@ function renderMessage(message) {
 async function loadChatHistory() {
   const { chatHistory } = await chrome.storage.local.get(["chatHistory"]);
 
+  // Saving settings calls this again, so drop bubbles from an earlier load.
+  // Clearing after the await keeps the clear and the re-render in one task.
+  for (const messageBubble of messageListEl.querySelectorAll(".msg")) {
+    messageBubble.remove();
+  }
+  emptyStateEl.hidden = false;
+
   for (const message of chatHistory || []) {
     renderMessage(message);
   }

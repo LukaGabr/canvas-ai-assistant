@@ -54,11 +54,24 @@ let isRefreshing = false;
 // { message, lastSyncedAtStart } — lastSyncedAtStart lets a newer successful
 // sync (from any source) automatically clear a stale error.
 let lastRefreshError = null;
+// True while syncProgress exists in storage: a sync is running somewhere
+// (this panel, another window, or the background worker on its own).
+let isSyncProgressPresent = false;
+// lastSynced when the current sync started; only a successful run changes it.
+let lastSyncedAtSyncStart;
+// Set while a settings save checks the new Canvas URL. Ask stays off until
+// that sync ends, since the cached index may belong to the old URL.
+let isCheckingNewSettings = false;
+let isAskingQuestion = false;
 
 let renderedSyncRunId = null;
 let renderedSyncWasDeterminate = false;
 let syncProgressTimer = null;
 let hasReceivedSyncProgressChange = false;
+
+function isSyncRunning() {
+  return isRefreshing || isSyncProgressPresent;
+}
 
 function cleanCanvasUrl(value) {
   return value.trim().replace(/^https?:\/\//i, "").split("/")[0];
@@ -161,21 +174,38 @@ function showMain() {
   mainSection.hidden = false;
 }
 
-async function checkIndexReady() {
+async function checkIndexReady({ ignoreStoredError = false } = {}) {
   const { courseIndex, indexError } = await chrome.storage.local.get(["courseIndex", "indexError"]);
 
-  if (indexError) {
-    statusEl.textContent = "Couldn't reach Canvas at that URL. Double check your school's Canvas domain in settings.";
+  // The Ask handler owns the button and status while a question is in flight.
+  if (isAskingQuestion) return;
+
+  if (isCheckingNewSettings) {
+    statusEl.textContent = "Checking your Canvas URL...";
     askButton.disabled = true;
     return;
   }
 
-  if (!courseIndex || courseIndex.length === 0) {
-    statusEl.textContent = "No indexed courses yet. Visit Canvas and reopen the extension.";
+  const syncRunning = isSyncRunning();
+  const hasCourses = Array.isArray(courseIndex) && courseIndex.length > 0;
+
+  // While a sync is running, a stored error belongs to an earlier run; it
+  // comes back if this run fails too.
+  if (indexError && !syncRunning && !ignoreStoredError) {
+    statusEl.textContent = "Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct.";
     askButton.disabled = true;
     return;
   }
 
+  if (!hasCourses) {
+    statusEl.textContent = syncRunning
+      ? "Syncing your courses from Canvas…"
+      : "No indexed courses yet. Visit Canvas and reopen the extension.";
+    askButton.disabled = true;
+    return;
+  }
+
+  // Cached courses stay usable during a sync, so Ask stays on.
   askButton.disabled = false;
   statusEl.textContent = "";
 }
@@ -284,10 +314,30 @@ function formatRelativeTime(timestamp) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
+function showSyncingState() {
+  lastSyncedTextEl.textContent = "Syncing with Canvas…";
+  syncRowEl.classList.remove("sync-error");
+  syncRowEl.title = "";
+  refreshButton.disabled = true;
+  refreshButton.classList.add("spinning");
+}
+
 async function renderLastSynced() {
-  if (isRefreshing) return;
+  if (isSyncRunning()) {
+    showSyncingState();
+    return;
+  }
 
   const { lastSynced } = await chrome.storage.local.get(["lastSynced"]);
+
+  // A sync may have started while the read was pending.
+  if (isSyncRunning()) {
+    showSyncingState();
+    return;
+  }
+
+  refreshButton.disabled = false;
+  refreshButton.classList.remove("spinning");
 
   // Only a successful index writes lastSynced, so any change since the failed
   // refresh started means a newer sync succeeded and the error is stale.
@@ -306,9 +356,11 @@ async function renderLastSynced() {
 // Shared by the settings-save flow and the manual refresh button.
 async function refreshCourseIndex() {
   isRefreshing = true;
-  refreshButton.disabled = true;
-  refreshButton.classList.add("spinning");
-  lastSyncedTextEl.textContent = "Syncing with Canvas…";
+  // Drop the previous failure right away so the retry is visible; it comes
+  // back when this run ends if it fails too.
+  lastRefreshError = null;
+  renderLastSynced();
+  checkIndexReady();
 
   const { lastSynced: lastSyncedAtStart } = await chrome.storage.local.get(["lastSynced"]);
 
@@ -322,27 +374,25 @@ async function refreshCourseIndex() {
 
   isRefreshing = false;
   lastRefreshError = error ? { message: error, lastSyncedAtStart } : null;
-  refreshButton.disabled = false;
-  refreshButton.classList.remove("spinning");
 
   renderLastSynced();
   renderDueSoon();
   return { success: !error, error };
 }
 
-refreshButton.addEventListener("click", async () => {
-  const { success } = await refreshCourseIndex();
-
-  // Only clear a previous error state on success; a failed manual refresh
-  // shouldn't disable Ask while the cached index is still usable.
-  if (success) checkIndexReady();
-});
+// Status and Ask follow the storage listeners below, which cover syncs from
+// anywhere, so the click only needs to start the refresh.
+refreshButton.addEventListener("click", () => refreshCourseIndex());
 
 // Keep the relative time accurate while the panel stays open, and pick up
 // automatic re-indexes the background worker does on its own.
 setInterval(renderLastSynced, LAST_SYNCED_TICK_MS);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.lastSynced) renderLastSynced();
+  if (area !== "local") return;
+  if (changes.lastSynced) renderLastSynced();
+  // Keep the status and Ask in step with syncs from anywhere, including the
+  // background worker's own.
+  if (changes.indexError || changes.courseIndex) checkIndexReady();
 });
 
 function setSyncProgressFill(fraction, transitionMs = 0, easing = "ease-out") {
@@ -403,16 +453,44 @@ function renderSyncProgress(syncProgress) {
   );
 }
 
+async function handleSyncProgressPresence(syncProgress) {
+  const wasPresent = isSyncProgressPresent;
+  isSyncProgressPresent = Boolean(syncProgress);
+  if (wasPresent === isSyncProgressPresent) return;
+
+  if (isSyncProgressPresent) {
+    renderLastSynced();
+    checkIndexReady();
+    ({ lastSynced: lastSyncedAtSyncStart } = await chrome.storage.local.get(["lastSynced"]));
+    return;
+  }
+
+  // The worker clears syncProgress just before it updates indexError, so after
+  // a successful run the old error is still stored for a moment. A new
+  // lastSynced means this run succeeded, so ignore that error here.
+  const { lastSynced } = await chrome.storage.local.get(["lastSynced"]);
+  renderLastSynced();
+  checkIndexReady({ ignoreStoredError: lastSynced !== lastSyncedAtSyncStart });
+}
+
 // Driven by storage rather than by this panel's own refresh, so the bar also
 // shows for syncs started at startup, by another window, or before this panel opened.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.syncProgress) return;
   hasReceivedSyncProgressChange = true;
   renderSyncProgress(changes.syncProgress.newValue);
+  handleSyncProgressPresence(changes.syncProgress.newValue);
 });
 chrome.storage.local.get(["syncProgress"]).then(({ syncProgress }) => {
   // A change event that arrived first is newer than this snapshot.
-  if (!hasReceivedSyncProgressChange) renderSyncProgress(syncProgress);
+  if (hasReceivedSyncProgressChange) return;
+  renderSyncProgress(syncProgress);
+  handleSyncProgressPresence(syncProgress);
+
+  // Progress left by a worker that died mid-sync would keep ↻ disabled. Any
+  // message wakes the worker, whose startup clears leftover progress; a live
+  // worker's progress is accurate and it ignores this message.
+  if (syncProgress) chrome.runtime.sendMessage({ type: "WAKE" }, () => void chrome.runtime.lastError);
 });
 
 function renderMessage(message) {
@@ -483,10 +561,14 @@ saveSettingsButton.addEventListener("click", async () => {
   await chrome.storage.local.set({ canvasUrl, apiKey: key });
   await chrome.storage.local.remove("indexError");
   showMain();
+  isCheckingNewSettings = true;
   askButton.disabled = true;
   statusEl.textContent = "Checking your Canvas URL...";
 
-  refreshCourseIndex().then(() => checkIndexReady());
+  refreshCourseIndex().then(() => {
+    isCheckingNewSettings = false;
+    checkIndexReady();
+  });
 
   loadChatHistory();
 });
@@ -509,6 +591,7 @@ askButton.addEventListener("click", async () => {
 
   if (!question) return;
 
+  isAskingQuestion = true;
   askButton.disabled = true;
   statusEl.textContent = "Thinking...";
 
@@ -516,6 +599,7 @@ askButton.addEventListener("click", async () => {
   const history = getRecentHistoryForRequest(chatHistory);
 
   chrome.runtime.sendMessage({ type: "ASK_QUESTION", question, history }, async (response) => {
+    isAskingQuestion = false;
     askButton.disabled = false;
 
     if (chrome.runtime.lastError) {
@@ -530,6 +614,8 @@ askButton.addEventListener("click", async () => {
 
     statusEl.textContent = "";
     questionInput.value = "";
+    // Catch up on index changes that arrived while the question was in flight.
+    checkIndexReady();
 
     const userMessage = { role: "user", text: question, timestamp: Date.now() };
     const assistantMessage = { role: "assistant", text: response.answer, timestamp: Date.now() };

@@ -62,11 +62,47 @@ const TOOLS = [
   }
 ];
 
+// Thrown when Canvas no longer accepts this browser's session, or can't be
+// reached at all. Unlike other request failures, this fails the whole sync,
+// so a lost login can't save empty courses over the good cached data.
+class CanvasSessionError extends Error {}
+
+const SESSION_ENDED_MESSAGE =
+  "Canvas rejected the request because your session ended. Log in to Canvas in this browser, then refresh.";
+const CONNECTION_LOST_MESSAGE =
+  "Couldn't reach Canvas: the connection dropped or your login redirect was blocked. Check that you're online and logged in to Canvas, then refresh.";
+
+// Canvas also answers 401 for a single resource the user isn't allowed to see,
+// so a 401 only means the session ended if the user's own profile fails too.
+async function isCanvasSessionActive(requestUrl) {
+  const profileUrl = `${new URL(requestUrl).origin}/api/v1/users/self`;
+  try {
+    const response = await fetch(profileUrl, {
+      credentials: "include",
+      headers: { "Accept": "application/json" }
+    });
+    return response.ok && !response.redirected;
+  } catch (err) {
+    return false;
+  }
+}
+
 async function fetchJSON(url) {
-  const response = await fetch(url, {
-    credentials: "include",
-    headers: { "Accept": "application/json" }
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      credentials: "include",
+      headers: { "Accept": "application/json" }
+    });
+  } catch (err) {
+    // fetch only throws on network-level failures: offline, DNS, or a redirect
+    // to a login page on a domain this extension can't read.
+    throw new CanvasSessionError(CONNECTION_LOST_MESSAGE);
+  }
+
+  if (response.status === 401 && !(await isCanvasSessionActive(url))) {
+    throw new CanvasSessionError(SESSION_ENDED_MESSAGE);
+  }
 
   if (!response.ok) {
     throw new Error(`Canvas request failed (${response.status}): ${url}`);
@@ -75,6 +111,9 @@ async function fetchJSON(url) {
   try {
     return await response.json();
   } catch (err) {
+    // Canvas API routes don't redirect a signed-in user, so a non-JSON page
+    // reached through a redirect is the Canvas login page.
+    if (response.redirected) throw new CanvasSessionError(SESSION_ENDED_MESSAGE);
     throw new Error(`Canvas didn't return valid data for: ${url}`);
   }
 }
@@ -106,6 +145,7 @@ async function indexAllCourses(reportProgress = async () => {}) {
         `${BASE_URL}/courses/${course.id}/assignments?per_page=100`
       );
     } catch (err) {
+      if (err instanceof CanvasSessionError) throw err;
       console.warn(`Failed to fetch assignments for ${course.name}:`, err.message);
     }
 
@@ -116,6 +156,7 @@ async function indexAllCourses(reportProgress = async () => {}) {
       );
       filesArray = Array.isArray(files) ? files : [];
     } catch (err) {
+      if (err instanceof CanvasSessionError) throw err;
       console.warn(`Failed to fetch files for ${course.name}:`, err.message);
     }
 
@@ -126,6 +167,7 @@ async function indexAllCourses(reportProgress = async () => {}) {
       );
       syllabusText = stripHtml(courseDetails.syllabus_body);
     } catch (err) {
+      if (err instanceof CanvasSessionError) throw err;
       console.warn(`Failed to fetch details for ${course.name}:`, err.message);
     }
 
@@ -146,6 +188,7 @@ async function indexAllCourses(reportProgress = async () => {}) {
         };
       }
     } catch (err) {
+      if (err instanceof CanvasSessionError) throw err;
       console.warn(`Failed to fetch grades for ${course.name}:`, err.message);
     }
 
@@ -161,6 +204,7 @@ async function indexAllCourses(reportProgress = async () => {}) {
         author: (a.author && a.author.display_name) || null
       }));
     } catch (err) {
+      if (err instanceof CanvasSessionError) throw err;
       console.warn(`Failed to fetch announcements for ${course.name}:`, err.message);
     }
 
@@ -197,6 +241,8 @@ async function indexAllCourses(reportProgress = async () => {}) {
     await new Promise(resolve => setTimeout(resolve, 250));
   }
 
+  // Reached only when every course finished; a CanvasSessionError above
+  // leaves the cached index and its lastSynced untouched.
   await chrome.storage.local.set({
     courseIndex: fullData,
     lastSynced: Date.now()

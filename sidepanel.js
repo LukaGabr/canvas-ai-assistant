@@ -203,13 +203,19 @@ function showMain() {
   mainSection.hidden = false;
 }
 
-function setStatusText(text) {
-  statusEl.classList.remove("status-error");
+// The single writer of plain status text. isError shows it in the same red as
+// Ask errors, and tooltip sets the status line's title; any call without them
+// drops the red class and the title, so no other message keeps either.
+function setStatusText(text, { isError = false, tooltip = "" } = {}) {
+  statusEl.classList.toggle("status-error", isError);
+  statusEl.title = tooltip;
   statusEl.textContent = text;
 }
 
 function renderAskError() {
   statusEl.classList.add("status-error");
+  // Ask errors have no tooltip; drop one left by the Canvas sync message.
+  statusEl.title = "";
   statusEl.textContent = askError.message;
 
   if (askError.offersSettings) {
@@ -275,7 +281,10 @@ async function checkIndexReady({ ignoreStoredError = false } = {}) {
   // comes back if this run fails too.
   if (indexError && !syncRunning && !ignoreStoredError) {
     askError = null;
-    setStatusText("Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct, then press ↻ to sync again.");
+    setStatusText("Can't reach Canvas. Log in or fix Settings, then ↻.", {
+      isError: true,
+      tooltip: "Log in to Canvas in this browser and check that the domain in Settings is correct, then press ↻ to sync again."
+    });
     askButton.disabled = true;
     return;
   }

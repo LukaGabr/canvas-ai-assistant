@@ -286,6 +286,27 @@ button:disabled {
   gap: 8px;
   margin: 10px 0;
   padding: 4px;
+  /* scrollbar-color is inherited, and any non-auto value makes Chrome ignore
+     the ::-webkit-scrollbar rules below, so pin it to auto here. */
+  scrollbar-color: auto;
+}
+/* Transparent track with a rounded, inset thumb, so no square-ended track
+   shows at the top or bottom of the chat. */
+#messageList::-webkit-scrollbar {
+  width: 8px;
+}
+#messageList::-webkit-scrollbar-track {
+  background: transparent;
+}
+#messageList::-webkit-scrollbar-thumb {
+  background: var(--text-subtle);
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background-clip: padding-box;
+}
+#messageList::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
 }
 #emptyState {
   font-size: 12px;
@@ -347,6 +368,22 @@ button:disabled {
   background: var(--primary-button-hover-background);
 }
 .primaryButton:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+.secondaryButton {
+  margin-top: 8px;
+  /* 1px less than the 8px button padding, so its height matches Save's. */
+  padding: 7px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+}
+.secondaryButton:hover:not(:disabled) {
+  background: var(--ghost-button-hover-background);
+}
+.secondaryButton:focus-visible {
   outline: 2px solid var(--focus-outline);
   outline-offset: 2px;
 }

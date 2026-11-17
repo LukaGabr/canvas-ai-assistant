@@ -42,6 +42,13 @@ const AUTO_REFRESH_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
 // In chrome.storage.local so reopening the panel can't bypass the cooldown.
 const AUTO_REFRESH_FAILED_AT_KEY = "lastAutoRefreshFailedAt";
 
+// Returning to the panel after a failed sync retries once, but only after
+// being away at least this long, so a quick click elsewhere doesn't sync.
+const FOCUS_RETRY_MINIMUM_AWAY_MS = 2 * 1000;
+// Minimum gap between two focus retries. Kept in memory and separate from
+// the auto-refresh cooldown.
+const FOCUS_RETRY_COOLDOWN_MS = 10 * 1000;
+
 const SYNC_PROGRESS_STEP_MS = 400;
 const SYNC_PROGRESS_CREEP_MS = 45 * 1000;
 // How far into the current course's step the creep may go. Below 1, so the
@@ -77,6 +84,11 @@ let isHandlingProgressFoundOnOpen = false;
 // Bumped by every Due Soon render, so a slower storage read can't overwrite a
 // render made from a newer courseIndex that arrived in the meantime.
 let dueSoonRenderCount = 0;
+// Set on window blur, so only a focus that follows a blur counts as a return,
+// never the initial focus when the panel opens.
+let hasLostFocusSincePanelOpened = false;
+let lastBlurAt = 0;
+let lastFocusRetryAt = 0;
 
 let renderedSyncRunId = null;
 let renderedSyncWasDeterminate = false;
@@ -206,7 +218,7 @@ async function checkIndexReady({ ignoreStoredError = false } = {}) {
   // While a sync is running, a stored error belongs to an earlier run; it
   // comes back if this run fails too.
   if (indexError && !syncRunning && !ignoreStoredError) {
-    statusEl.textContent = "Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct.";
+    statusEl.textContent = "Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct, then press ↻ to sync again.";
     askButton.disabled = true;
     return;
   }
@@ -558,6 +570,40 @@ async function autoRefreshIfStale() {
   const { success } = await refreshCourseIndex();
   if (!success) await chrome.storage.local.set({ [AUTO_REFRESH_FAILED_AT_KEY]: Date.now() });
 }
+
+// Retries once when the user comes back to the panel after a failed sync, for
+// example after logging in to Canvas in another tab. Triggered by the failed
+// state, not by how old the data is; uses the same path as ↻.
+async function retrySyncOnReturnIfFailed() {
+  if (!hasLostFocusSincePanelOpened) return;
+  hasLostFocusSincePanelOpened = false;
+
+  if (Date.now() - lastBlurAt < FOCUS_RETRY_MINIMUM_AWAY_MS) return;
+  if (Date.now() - lastFocusRetryAt < FOCUS_RETRY_COOLDOWN_MS) return;
+  // The settings screen has its own sync on Save.
+  if (mainSection.hidden || isSyncRunning()) return;
+
+  const { apiKey, canvasUrl, courseIndex, indexError } =
+    await chrome.storage.local.get(["apiKey", "canvasUrl", "courseIndex", "indexError"]);
+
+  if (!apiKey || !canvasUrl) return;
+  // First-time setup stays manual.
+  if (!Array.isArray(courseIndex)) return;
+  if (!indexError) return;
+
+  // A sync may have started (another window, the worker, or the auto refresh)
+  // during the read above.
+  if (isSyncRunning()) return;
+
+  lastFocusRetryAt = Date.now();
+  refreshCourseIndex();
+}
+
+window.addEventListener("blur", () => {
+  hasLostFocusSincePanelOpened = true;
+  lastBlurAt = Date.now();
+});
+window.addEventListener("focus", () => retrySyncOnReturnIfFailed());
 
 function renderMessage(message) {
   emptyStateEl.hidden = true;

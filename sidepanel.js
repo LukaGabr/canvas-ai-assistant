@@ -383,7 +383,11 @@ function renderDueSoonCards(courseIndex) {
   if (upcoming.length === 0) {
     const empty = document.createElement("div");
     empty.id = "dueSoonEmpty";
-    empty.textContent = "Nothing due soon.";
+    // No courseIndex means no sync has finished yet, which isn't the same as
+    // a finished sync finding nothing due.
+    empty.textContent = Array.isArray(courseIndex)
+      ? "Nothing due soon."
+      : "Courses appear here after the first sync.";
     dueSoonCardsEl.appendChild(empty);
     viewAllDueSoonButton.hidden = true;
     return;
@@ -781,6 +785,9 @@ saveSettingsButton.addEventListener("click", async () => {
   await chrome.storage.local.set({ canvasUrl, apiKey: key });
   await chrome.storage.local.remove("indexError");
   showMain();
+  // Draw Due Soon now, so a first-time user sees the placeholder during the
+  // first sync instead of an empty card. Existing users see their cached data.
+  renderDueSoon();
   isCheckingNewSettings = true;
   askError = null;
   askButton.disabled = true;

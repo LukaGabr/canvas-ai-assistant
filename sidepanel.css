@@ -317,6 +317,13 @@ button:disabled {
   color: var(--text-secondary);
   min-height: 16px;
 }
+#status.status-error {
+  color: var(--sync-error-text);
+}
+#status .linkButton {
+  margin: 0;
+  font-size: inherit;
+}
 .field {
   border: 1px solid var(--input-border);
   border-radius: 8px;

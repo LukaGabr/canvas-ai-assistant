@@ -417,34 +417,47 @@ function resolveToolUse(courseIndex, block) {
 }
 
 async function callClaude(apiKey, messages) {
-  const response = await fetch(CLAUDE_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": "server-side-fallback-2026-07-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      system: [
-        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }
-      ],
-      tools: TOOLS,
-      output_config: { effort: "low" },
-      fallbacks: "default",
-      messages
-    })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `Claude API error (${response.status})`);
+  let response;
+  try {
+    response = await fetch(CLAUDE_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "server-side-fallback-2026-07-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        system: [
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }
+        ],
+        tools: TOOLS,
+        output_config: { effort: "low" },
+        fallbacks: "default",
+        messages
+      })
+    });
+  } catch (err) {
+    // No HTTP response at all: offline, DNS, or the request was blocked.
+    const networkError = new Error(`Couldn't reach the Claude API: ${err.message}`);
+    networkError.isNetworkError = true;
+    throw networkError;
   }
 
+  // A gateway error page (for example a 502) may not be JSON; keep its status either way.
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const apiError = new Error(data?.error?.message || `Claude API error (${response.status})`);
+    apiError.httpStatus = response.status;
+    apiError.apiErrorType = data?.error?.type ?? null;
+    throw apiError;
+  }
+
+  if (!data) throw new Error("Claude returned a response that couldn't be read.");
   return data;
 }
 
@@ -561,7 +574,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "ASK_QUESTION") {
     askClaude(message.question, message.history)
       .then(answer => sendResponse({ success: true, answer }))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .catch(err => sendResponse({
+        success: false,
+        error: err.message,
+        httpStatus: err.httpStatus ?? null,
+        apiErrorType: err.apiErrorType ?? null,
+        isNetworkError: Boolean(err.isNetworkError)
+      }));
 
     return true; // keep the message channel open for the async response
   }

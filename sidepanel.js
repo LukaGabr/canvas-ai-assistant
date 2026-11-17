@@ -77,6 +77,9 @@ let lastSyncedAtSyncStart;
 // that sync ends, since the cached index may belong to the old URL.
 let isCheckingNewSettings = false;
 let isAskingQuestion = false;
+// The last failed question's message, shown in #status while the index is
+// fine: { message, offersSettings } or null.
+let askError = null;
 // Set when the panel opens and finds syncProgress already stored. That case is
 // handled by the WAKE message (leftover progress) or is a sync already running,
 // so the automatic refresh stays out of it.
@@ -200,6 +203,58 @@ function showMain() {
   mainSection.hidden = false;
 }
 
+function setStatusText(text) {
+  statusEl.classList.remove("status-error");
+  statusEl.textContent = text;
+}
+
+function renderAskError() {
+  statusEl.classList.add("status-error");
+  statusEl.textContent = askError.message;
+
+  if (askError.offersSettings) {
+    const openSettingsButton = document.createElement("button");
+    openSettingsButton.className = "linkButton";
+    openSettingsButton.textContent = "Open Settings";
+    openSettingsButton.addEventListener("click", () => showSettings());
+    statusEl.append(" ", openSettingsButton);
+  }
+}
+
+// Maps a failed ASK_QUESTION response to a friendly message. Prefers the HTTP
+// status and API error type; message text is used only for the credit case,
+// which the API reports as a generic invalid_request_error.
+function describeAskError({ error: errorMessage, httpStatus, apiErrorType, isNetworkError }) {
+  if (isNetworkError) {
+    return { message: "Couldn't reach Claude. Check your internet connection and try again." };
+  }
+
+  if (httpStatus === 401 || apiErrorType === "authentication_error") {
+    return {
+      message: "Your API key was rejected. It may have expired or been revoked.",
+      offersSettings: true
+    };
+  }
+
+  const isLowCreditError =
+    httpStatus === 400 && apiErrorType === "invalid_request_error" && /credit balance/i.test(errorMessage || "");
+  if (apiErrorType === "billing_error" || isLowCreditError) {
+    return { message: "Your Anthropic account is out of credits. Add credits in the Anthropic Console, then try again." };
+  }
+
+  const isBusyError =
+    httpStatus === 429 ||
+    httpStatus >= 500 ||
+    apiErrorType === "rate_limit_error" ||
+    apiErrorType === "overloaded_error" ||
+    apiErrorType === "api_error";
+  if (isBusyError) {
+    return { message: "Claude is busy or you've hit a rate limit. Wait a minute and try again." };
+  }
+
+  return { message: `Error: ${errorMessage || "No response from background script."}` };
+}
+
 async function checkIndexReady({ ignoreStoredError = false } = {}) {
   const { courseIndex, indexError } = await chrome.storage.local.get(["courseIndex", "indexError"]);
 
@@ -207,7 +262,8 @@ async function checkIndexReady({ ignoreStoredError = false } = {}) {
   if (isAskingQuestion) return;
 
   if (isCheckingNewSettings) {
-    statusEl.textContent = "Checking your Canvas URL...";
+    askError = null;
+    setStatusText("Checking your Canvas URL...");
     askButton.disabled = true;
     return;
   }
@@ -218,22 +274,26 @@ async function checkIndexReady({ ignoreStoredError = false } = {}) {
   // While a sync is running, a stored error belongs to an earlier run; it
   // comes back if this run fails too.
   if (indexError && !syncRunning && !ignoreStoredError) {
-    statusEl.textContent = "Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct, then press ↻ to sync again.";
+    askError = null;
+    setStatusText("Couldn't reach Canvas. Make sure you're logged in to Canvas in this browser and that the domain in Settings is correct, then press ↻ to sync again.");
     askButton.disabled = true;
     return;
   }
 
   if (!hasCourses) {
-    statusEl.textContent = syncRunning
+    askError = null;
+    setStatusText(syncRunning
       ? "Syncing your courses from Canvas…"
-      : "No indexed courses yet. Visit Canvas and reopen the extension.";
+      : "No indexed courses yet. Visit Canvas and reopen the extension.");
     askButton.disabled = true;
     return;
   }
 
   // Cached courses stay usable during a sync, so Ask stays on.
   askButton.disabled = false;
-  statusEl.textContent = "";
+  // Keep a failed question's message: a sync finishing doesn't fix a bad key.
+  if (askError) renderAskError();
+  else setStatusText("");
 }
 
 function daysUntil(dueAt) {
@@ -675,8 +735,9 @@ saveSettingsButton.addEventListener("click", async () => {
   await chrome.storage.local.remove("indexError");
   showMain();
   isCheckingNewSettings = true;
+  askError = null;
   askButton.disabled = true;
-  statusEl.textContent = "Checking your Canvas URL...";
+  setStatusText("Checking your Canvas URL...");
 
   refreshCourseIndex().then(() => {
     isCheckingNewSettings = false;
@@ -705,29 +766,32 @@ askButton.addEventListener("click", async () => {
   if (!question) return;
 
   isAskingQuestion = true;
+  askError = null;
   askButton.disabled = true;
-  statusEl.textContent = "Thinking...";
+  setStatusText("Thinking...");
 
   const { chatHistory } = await chrome.storage.local.get(["chatHistory"]);
   const history = getRecentHistoryForRequest(chatHistory);
 
   chrome.runtime.sendMessage({ type: "ASK_QUESTION", question, history }, async (response) => {
     isAskingQuestion = false;
-    askButton.disabled = false;
 
     if (chrome.runtime.lastError) {
-      statusEl.textContent = `Error: ${chrome.runtime.lastError.message}`;
+      askError = { message: `Error: ${chrome.runtime.lastError.message}` };
+      // Restores Ask through the panel's normal rules, then shows the error if the index is fine.
+      checkIndexReady();
       return;
     }
 
     if (!response || !response.success) {
-      statusEl.textContent = `Error: ${response ? response.error : "No response from background script."}`;
+      askError = describeAskError(response || {});
+      checkIndexReady();
       return;
     }
 
-    statusEl.textContent = "";
     questionInput.value = "";
-    // Catch up on index changes that arrived while the question was in flight.
+    // Restores Ask through the panel's normal rules and catches up on index
+    // changes that arrived while the question was in flight.
     checkIndexReady();
 
     const userMessage = { role: "user", text: question, timestamp: Date.now() };

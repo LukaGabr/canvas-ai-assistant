@@ -3,6 +3,7 @@ const mainSection = document.getElementById("mainSection");
 const canvasUrlInput = document.getElementById("canvasUrlInput");
 const apiKeyInput = document.getElementById("apiKeyInput");
 const saveSettingsButton = document.getElementById("saveSettingsButton");
+const cancelSettingsButton = document.getElementById("cancelSettingsButton");
 const settingsStatusEl = document.getElementById("settingsStatus");
 const changeSettingsButton = document.getElementById("changeSettingsButton");
 
@@ -190,10 +191,13 @@ function isPlausibleDomain(value) {
 }
 
 async function showSettings() {
-  const { canvasUrl } = await chrome.storage.local.get(["canvasUrl"]);
+  const { canvasUrl, apiKey } = await chrome.storage.local.get(["canvasUrl", "apiKey"]);
   canvasUrlInput.value = canvasUrl || "";
   apiKeyInput.value = "";
   settingsStatusEl.textContent = "";
+  // Cancel needs a main screen to return to, which init() only shows once
+  // both the Canvas URL and the API key are saved.
+  cancelSettingsButton.hidden = !(canvasUrl && apiKey);
   settingsSection.hidden = false;
   mainSection.hidden = true;
 }
@@ -760,6 +764,15 @@ changeSettingsButton.addEventListener("click", () => {
   showSettings();
 });
 
+// Leaves Settings without saving: no storage writes and no sync. Typed edits
+// are discarded now; showSettings() refills the fields from storage next time.
+cancelSettingsButton.addEventListener("click", () => {
+  canvasUrlInput.value = "";
+  apiKeyInput.value = "";
+  settingsStatusEl.textContent = "";
+  showMain();
+});
+
 clearButton.addEventListener("click", async () => {
   if (!confirm("Clear the entire conversation history? This can't be undone.")) return;
 
@@ -769,7 +782,11 @@ clearButton.addEventListener("click", async () => {
   emptyStateEl.hidden = false;
 });
 
-askButton.addEventListener("click", async () => {
+// Shared by the Ask button and Enter in the question box.
+async function submitQuestion() {
+  // A disabled button never fires a click, but Enter reaches here directly.
+  if (askButton.disabled || isAskingQuestion) return;
+
   const question = questionInput.value.trim();
 
   if (!question) return;
@@ -811,6 +828,21 @@ askButton.addEventListener("click", async () => {
 
     await appendToHistory([userMessage, assistantMessage]);
   });
+}
+
+askButton.addEventListener("click", () => submitQuestion());
+
+// Enter sends, Shift+Enter keeps the textarea's newline.
+questionInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey) return;
+  // Enter during IME composition confirms the composed text; it isn't a send.
+  if (event.isComposing || event.keyCode === 229) return;
+
+  // A plain Enter never inserts a newline, even when nothing is sent
+  // (Ask disabled, a question running, or an empty box).
+  event.preventDefault();
+  if (event.repeat) return;
+  submitQuestion();
 });
 
 init();

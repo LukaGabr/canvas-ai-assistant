@@ -678,12 +678,46 @@ window.addEventListener("blur", () => {
 });
 window.addEventListener("focus", () => retrySyncOnReturnIfFailed());
 
+// One **bold** run within a single line. The content must start and end with
+// a character that is neither whitespace nor "*", so "5 ** 2 ** 3",
+// "** not bold **" and "****" stay literal. Both the middle and the optional
+// group are lazy ("??"), so "**a****b**" and "**a** and **b**" are two runs.
+const BOLD_RUN_PATTERN = /\*\*([^\s*](?:[^\n]*?[^\s*])??)\*\*/g;
+
+// Turns reply text into DOM nodes: text nodes for plain text and <strong>
+// elements (set with textContent) for bold runs. Never parses HTML, so markup
+// in a reply always shows as literal text. Doesn't touch the page.
+function buildBoldAwareNodes(text) {
+  const replyText = String(text ?? "");
+  const nodes = [];
+  let plainTextStart = 0;
+
+  for (const boldMatch of replyText.matchAll(BOLD_RUN_PATTERN)) {
+    if (boldMatch.index > plainTextStart) {
+      nodes.push(document.createTextNode(replyText.slice(plainTextStart, boldMatch.index)));
+    }
+
+    const boldElement = document.createElement("strong");
+    boldElement.textContent = boldMatch[1];
+    nodes.push(boldElement);
+
+    plainTextStart = boldMatch.index + boldMatch[0].length;
+  }
+
+  if (plainTextStart < replyText.length) {
+    nodes.push(document.createTextNode(replyText.slice(plainTextStart)));
+  }
+  return nodes;
+}
+
 function renderMessage(message) {
   emptyStateEl.hidden = true;
 
   const bubble = document.createElement("div");
   bubble.className = `msg ${message.role === "user" ? "msg-user" : "msg-assistant"}`;
-  bubble.textContent = message.text;
+  // Assistant replies may use **bold**; user messages stay plain text.
+  if (message.role === "assistant") bubble.append(...buildBoldAwareNodes(message.text));
+  else bubble.textContent = message.text;
   messageListEl.appendChild(bubble);
   messageListEl.scrollTop = messageListEl.scrollHeight;
 }

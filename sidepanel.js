@@ -35,6 +35,13 @@ const DUE_SOON_SOON_DAYS = 3;
 
 const LAST_SYNCED_TICK_MS = 60 * 1000;
 
+// Opening the panel refreshes data older than this, using the same path as ↻.
+const AUTO_REFRESH_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+// After an automatic refresh fails, wait this long before trying again on open.
+const AUTO_REFRESH_RETRY_COOLDOWN_MS = 10 * 60 * 1000;
+// In chrome.storage.local so reopening the panel can't bypass the cooldown.
+const AUTO_REFRESH_FAILED_AT_KEY = "lastAutoRefreshFailedAt";
+
 const SYNC_PROGRESS_STEP_MS = 400;
 const SYNC_PROGRESS_CREEP_MS = 45 * 1000;
 // How far into the current course's step the creep may go. Below 1, so the
@@ -63,6 +70,13 @@ let lastSyncedAtSyncStart;
 // that sync ends, since the cached index may belong to the old URL.
 let isCheckingNewSettings = false;
 let isAskingQuestion = false;
+// Set when the panel opens and finds syncProgress already stored. That case is
+// handled by the WAKE message (leftover progress) or is a sync already running,
+// so the automatic refresh stays out of it.
+let isHandlingProgressFoundOnOpen = false;
+// Bumped by every Due Soon render, so a slower storage read can't overwrite a
+// render made from a newer courseIndex that arrived in the meantime.
+let dueSoonRenderCount = 0;
 
 let renderedSyncRunId = null;
 let renderedSyncWasDeterminate = false;
@@ -273,8 +287,10 @@ function renderDueSoonCard(assignment) {
   return card;
 }
 
-async function renderDueSoon() {
-  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
+// Draws Due Soon from a given courseIndex. Missing or empty data shows
+// "Nothing due soon." (collectUpcomingAssignments treats it as no courses).
+function renderDueSoonCards(courseIndex) {
+  dueSoonRenderCount++;
   const upcoming = collectUpcomingAssignments(courseIndex);
 
   dueSoonCardsEl.innerHTML = "";
@@ -295,6 +311,15 @@ async function renderDueSoon() {
 
   viewAllDueSoonButton.hidden = upcoming.length <= DUE_SOON_DEFAULT_COUNT;
   viewAllDueSoonButton.textContent = dueSoonExpanded ? "Show less" : "View all →";
+}
+
+async function renderDueSoon() {
+  const renderCountAtRead = dueSoonRenderCount;
+  const { courseIndex } = await chrome.storage.local.get(["courseIndex"]);
+
+  // A newer courseIndex was already drawn from a storage change while this read was pending.
+  if (dueSoonRenderCount !== renderCountAtRead) return;
+  renderDueSoonCards(courseIndex);
 }
 
 viewAllDueSoonButton.addEventListener("click", () => {
@@ -393,6 +418,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   // Keep the status and Ask in step with syncs from anywhere, including the
   // background worker's own.
   if (changes.indexError || changes.courseIndex) checkIndexReady();
+  // Redraw Due Soon after any sync, including ones this panel didn't start.
+  if (changes.courseIndex) renderDueSoonCards(changes.courseIndex.newValue);
+  // Only a successful sync writes lastSynced, so it ends any auto-refresh cooldown.
+  if (changes.lastSynced?.newValue) chrome.storage.local.remove(AUTO_REFRESH_FAILED_AT_KEY);
 });
 
 function setSyncProgressFill(fraction, transitionMs = 0, easing = "ease-out") {
@@ -481,7 +510,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   renderSyncProgress(changes.syncProgress.newValue);
   handleSyncProgressPresence(changes.syncProgress.newValue);
 });
-chrome.storage.local.get(["syncProgress"]).then(({ syncProgress }) => {
+// Kept as a promise so the automatic refresh can wait for it.
+const initialSyncProgressRead = chrome.storage.local.get(["syncProgress"]).then(({ syncProgress }) => {
   // A change event that arrived first is newer than this snapshot.
   if (hasReceivedSyncProgressChange) return;
   renderSyncProgress(syncProgress);
@@ -490,8 +520,44 @@ chrome.storage.local.get(["syncProgress"]).then(({ syncProgress }) => {
   // Progress left by a worker that died mid-sync would keep ↻ disabled. Any
   // message wakes the worker, whose startup clears leftover progress; a live
   // worker's progress is accurate and it ignores this message.
-  if (syncProgress) chrome.runtime.sendMessage({ type: "WAKE" }, () => void chrome.runtime.lastError);
+  if (syncProgress) {
+    isHandlingProgressFoundOnOpen = true;
+    chrome.runtime.sendMessage({ type: "WAKE" }, () => void chrome.runtime.lastError);
+  }
 });
+
+// Runs once per panel open. Uses refreshCourseIndex(), the same path as ↻, so
+// the progress bar, sync row and error handling match a manual sync.
+async function autoRefreshIfStale() {
+  await initialSyncProgressRead;
+  if (isHandlingProgressFoundOnOpen || isSyncRunning()) return;
+
+  const {
+    apiKey,
+    canvasUrl,
+    courseIndex,
+    lastSynced,
+    [AUTO_REFRESH_FAILED_AT_KEY]: lastAutoRefreshFailedAt
+  } = await chrome.storage.local.get(["apiKey", "canvasUrl", "courseIndex", "lastSynced", AUTO_REFRESH_FAILED_AT_KEY]);
+
+  if (!apiKey || !canvasUrl) return;
+  // First-time setup stays manual. An empty list (no active courses) still
+  // counts as cached, so a new semester's courses get picked up.
+  if (!Array.isArray(courseIndex)) return;
+  if (lastSynced && Date.now() - lastSynced < AUTO_REFRESH_STALE_AFTER_MS) return;
+
+  if (lastAutoRefreshFailedAt) {
+    const timeSinceFailure = Date.now() - lastAutoRefreshFailedAt;
+    // A timestamp in the future (clock change) shouldn't block refreshes indefinitely.
+    if (timeSinceFailure >= 0 && timeSinceFailure < AUTO_REFRESH_RETRY_COOLDOWN_MS) return;
+  }
+
+  // A sync may have started (another window, or the worker) during the reads above.
+  if (isSyncRunning()) return;
+
+  const { success } = await refreshCourseIndex();
+  if (!success) await chrome.storage.local.set({ [AUTO_REFRESH_FAILED_AT_KEY]: Date.now() });
+}
 
 function renderMessage(message) {
   emptyStateEl.hidden = true;
@@ -537,6 +603,7 @@ async function init() {
   renderDueSoon();
   renderLastSynced();
   loadChatHistory();
+  autoRefreshIfStale();
 }
 
 saveSettingsButton.addEventListener("click", async () => {

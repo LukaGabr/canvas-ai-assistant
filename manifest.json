@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Canvas AI Assistant",
-  "version": "0.2.0",
+  "version": "0.3.0",
+  "minimum_chrome_version": "123",
   "description": "Ask your Canvas courses questions in plain English.",
   "action": {
     "default_icon": {

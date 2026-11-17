@@ -24,6 +24,11 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **Bring your own API key** — each user supplies their own Claude API key; no shared backend, no cost or data liability for anyone but the person using it
 - **Works at any Canvas-based school** — not hardcoded to one university
 - **Sync visibility and manual refresh** — see exactly how long ago your data was last pulled from Canvas, with a one-click refresh for whenever you need current data immediately instead of waiting on the automatic daily sync
+- **Dark mode** — switch between light and dark with one click; your choice is remembered
+- **Live sync progress** — a slim progress bar shows how far a sync has got, so a refresh never looks stuck
+- **Stays fresh on its own** — opening the panel refreshes your data automatically when it's several hours old, and a failed sync retries once when you come back to the panel after logging in to Canvas again
+- **Clear error messages** — when a question fails (key rejected, out of credits, busy, offline) you see what happened and what to do, instead of raw API text
+- **Quality-of-life touches** — press Enter to send (Shift+Enter for a new line), Cancel out of Settings without saving, and bold text in replies shows as real bold
 
 ## How it works (technical overview)
 
@@ -34,6 +39,8 @@ Canvas buries useful information across dozens of pages per course. This extensi
 - **PDF extraction runs in an offscreen document** — a Manifest V3 constraint (service workers can't spawn real workers) worked around using Chrome's offscreen document API alongside pdf.js.
 
 ## Install
+
+**Requires Chrome 123 or newer.**
 
 **Chrome Web Store (recommended):**
 [Install Canvas AI Assistant](https://chromewebstore.google.com/detail/hnebmaenjbmhjjdhmhdidgamekemaihb)
@@ -50,7 +57,7 @@ Canvas buries useful information across dozens of pages per course. This extensi
 4. Click the extension icon to open the side panel
 5. Get a Claude API key at [platform.claude.com](https://platform.claude.com) (Settings → API keys)
 6. Enter your **Claude API key** and your **school's Canvas URL** (e.g. `yourschool.instructure.com`) in the settings screen
-7. Visit your Canvas dashboard once to let it index your courses, then start asking questions
+7. Make sure you're logged in to Canvas in this browser. After you save, the extension indexes your courses automatically (this can take a minute), then start asking questions
 
 ## Known limitations
 
